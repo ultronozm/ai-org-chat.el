@@ -3,7 +3,7 @@
 ;; Copyright (C) 2023  Paul D. Nelson
 
 ;; Author: Paul D. Nelson <nelson.paul.david@gmail.com>
-;; Version: 1.0
+;; Version: 0.1
 ;; URL: https://github.com/ultronozm/ai-threaded-chat.el
 ;; Package-Requires: ((emacs "29.1") (gptel "0.3.5"))
 ;; Keywords: convenience, ai, chat
