@@ -30,7 +30,7 @@
 ;; the user to provide an OpenAI API key, set via the `gptel-api-key'
 ;; variable.
 ;;
-;; The user is encouraged to bind a key `ai-threaded-chat-new' in
+;; The user is encouraged to bind a key to `ai-threaded-chat-new' in
 ;; `global-map' and keys to `ai-threaded-chat-respond' and
 ;; `ai-threaded-chat-append-top-level-heading' in
 ;; `ai-threaded-chat-minor-mode-map'.  Here's a sample use-package
