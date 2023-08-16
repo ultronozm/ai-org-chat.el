@@ -85,17 +85,17 @@
 (defcustom ai-threaded-chat-user-name "User"
   "User name to insert into buffer."
   :type 'string
-  :group 'czm/ai-settings)
+  :group 'ai-threaded-chat)
 
 (defcustom ai-threaded-chat-ai-name "AI"
   "AI name to insert into buffer."
   :type 'string
-  :group 'czm/ai-settings)
+  :group 'ai-threaded-chat)
 
 (defcustom ai-threaded-chat-prompt-preamble "You are a brilliant and helpful assistant."
   "Preamble to insert before the prompt."
   :type 'string
-  :group 'czm/ai-settings)
+  :group 'ai-threaded-chat)
 
 (defun ai-threaded-chat--request (messages point)
   "Use `gptel' library to get a response from OpenAI.
@@ -116,7 +116,7 @@ inserted.
 
 Modify this if you want to use some backend other than `gptel'."
   :type 'function
-  :group 'czm/ai-settings)
+  :group 'ai-threaded-chat)
 
 ;;;###autoload
 (defun ai-threaded-chat-respond ()
@@ -171,11 +171,37 @@ Each heading is formatted as \"<heading>: <body>\"."
         (push (ai-threaded-chat--current-heading-and-body) ancestors)))
     ancestors))
 
+(defun ai-threaded-chat--org-entry-minus-properties (entry)
+  "Return ENTRY with properties drawer removed (if any).
+The properties drawer is not used in the current version of this
+library, but I had experimented with putting metadata there, and
+found it convenient to exclude such metadata from the text
+submitted to OpenAI."
+  (let ((lines-without-property-drawer
+         (let* ((lines (split-string entry "\n"))
+                (property-drawer-start
+                 (cl-position-if (lambda (line)
+                                   (string-match-p "^[ \t]*:PROPERTIES:[ \t]*$"
+                                                   line))
+                                 lines))
+                (property-drawer-end
+	         (when property-drawer-start
+	           (cl-position-if (lambda (line)
+			             (string-match-p "^[ \t]*:END:[ \t]*$" line))
+			           lines :from-end t))))
+           (if (and property-drawer-start property-drawer-end)
+	       (append (cl-subseq lines 0 property-drawer-start)
+		       (cl-subseq lines (1+ property-drawer-end) (length lines)))
+             lines))))
+    (mapconcat 'identity
+	       (cdr lines-without-property-drawer)
+	       "\n")))
+
 (defun ai-threaded-chat--current-heading-and-body ()
   "Get current heading and body text as a list."
   (let* ((heading (org-get-heading t t))
 	 (content
-	  ;; content of current entry
+	  ;; content of current entry, excluding children
 	  (save-excursion
 	    (org-back-to-heading)
 	    (buffer-substring-no-properties
@@ -183,28 +209,7 @@ Each heading is formatted as \"<heading>: <body>\"."
 	     (save-excursion
 	       (outline-next-heading)
 	       (point)))))
-	 (lines-without-property-drawer
-	  ;; lines of current entry, excluding property drawer
-	  (let* ((lines (split-string content "\n"))
-		 (property-drawer-start
-		  (cl-position-if (lambda (line)
-				    (string-match-p "^[ \t]*:PROPERTIES:[ \t]*$"
-						    line))
-				  lines))
-		 (property-drawer-end
-		  (when property-drawer-start
-		    (cl-position-if (lambda (line)
-				      (string-match-p "^[ \t]*:END:[ \t]*$" line))
-				    lines :from-end t))))
-	    (if (and property-drawer-start property-drawer-end)
-		(append (cl-subseq lines 0 property-drawer-start)
-			(cl-subseq lines (1+ property-drawer-end) (length lines)))
-	      lines)))
-	 ;; join all non-property lines, excluding title
-	 (body
-	  (mapconcat 'identity
-		     (cdr lines-without-property-drawer)
-		     "\n")))
+	 (body (ai-threaded-chat--org-entry-minus-properties content)))
     (list heading body)))
 
 (define-minor-mode ai-threaded-chat-minor-mode
@@ -219,7 +224,7 @@ Null prefix argument turns off the mode."
 (defcustom ai-threaded-chat-dir "~/gpt"
   "Directory for storing files created by `ai-threaded-chat-new'."
   :type 'string
-  :group 'czm/ai-settings)
+  :group 'ai-threaded-chat)
 
 ;;;###autoload
 (defun ai-threaded-chat-new ()
