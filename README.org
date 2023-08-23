@@ -8,7 +8,7 @@ This package supports a threaded AI chat inside any org-mode buffer.  Here's wha
 #+attr_latex: :width 800px
 [[./img/fruits.png]]
 
-The design is inspired by the ChatGPT web interface.  There are many AI chat packages for emacs, but I am not aware of any structured quite like this.
+The design is inspired by the ChatGPT web interface.  There are many AI chat packages for emacs, but I am not aware of any that naturally support multiple conversational pathways.
 
 The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
 
