@@ -23,58 +23,9 @@
 
 ;;; Commentary:
 
-;; This is a simple Emacs package that supports a threaded AI chat
-;; inside any org-mode buffer.
-;;
-;; The "plumbing" is outsourced to the `gptel' library, which requires
-;; the user to provide an OpenAI API key, set via the `gptel-api-key'
-;; variable.
-;;
-;; The user is encouraged to bind a key to `ai-org-chat-new' in
-;; `global-map' and keys to `ai-org-chat-respond' and
-;; `ai-org-chat-append-top-level-heading' in
-;; `ai-org-chat-minor-mode-map'.  Here's a sample use-package
-;; declaration, which assumes that the API key is set in the
-;; OPENAI_API_KEY environment variable:
-;; 
-;; (use-package exec-path-from-shell
-;;   :ensure
-;;   :init
-;;   (exec-path-from-shell-initialize))
-;;   
-;; (use-package gptel
-;;   :ensure
-;;   :after exec-path-from-shell
-;;   :config
-;;   (setq gptel-api-key (exec-path-from-shell-getenv "OPENAI_API_KEY")))
-;;
-;; (use-package ai-org-chat
-;;   :bind
-;;   (:map global-map
-;; 	("C-c /" . ai-org-chat-new))
-;;   (:map ai-org-chat-minor-mode
-;; 	("C-c <return>" . ai-org-chat-respond)
-;; 	("C-c n" . ai-org-chat-append-top-level-heading))
-;;   :commands (ai-org-chat-minor-mode) ; for manual activation in an org-mode buffer
-;;   :custom
-;;   (ai-org-chat-user-name "Paul")
-;;   (ai-org-chat-dir "~/gpt")
-;;   (ai-org-chat-prompt-preamble "You are a brilliant and helpful assistant.")) ; modify to suit your needs
-;; 
-;; `ai-org-chat-new' creates a new org-mode file (by default, in
-;; the directory "~/gpt/"), adds a top-level entry, and activates the
-;; minor mode `ai-org-chat-minor-mode'.  If the region is active,
-;; then the region contents are added to the top-level entry, enclosed
-;; in src blocks if appropriate.
-;; 
-;; `ai-org-chat-respond' inserts a response from the AI agent as a new
-;; heading.  Parent entries are treated as conversation history; they
-;; are viewed as responses from the AI when their heading is equal to
-;; "AI", and otherwise viewed as user messages.
-;; 
-;; `ai-org-chat-append-top-level-heading' appends a top-level
-;; heading to the current buffer, with the user name as the heading.
-;; This has the effect of starting a new top-level chat thread.
+;; This is a simple Emacs package that supports threaded AI chat
+;; inside any org-mode buffer.  See the README for configuration and
+;; usage instructions.
 
 
 ;;; Code:
@@ -95,9 +46,11 @@
   :type 'string
   :group 'ai-org-chat)
 
-(defcustom ai-org-chat-prompt-preamble "You are a brilliant and helpful assistant."
-  "Preamble to insert before the prompt."
-  :type 'string
+(defcustom ai-org-chat-system-message nil
+  "System message to use, if any.
+If this is nil, then a system message will be provided by
+`gptel'."
+  :type '(choice string (const nil))
   :group 'ai-org-chat)
 
 (defcustom ai-org-chat-dir "~/gpt"
@@ -150,7 +103,7 @@ delimited by \":PROPERTIES:\" and \":END:\"."
   "Return cons cell with heading and body of current entry.
 The heading excludes tags and TODO keywords.  The body consists
 of all text between the heading and the first subtree, but
-excluding the :PROPERTIES: drawer (if any)."
+excluding the :PROPERTIES: drawer, if any."
   (let* ((heading (org-get-heading t t))
 	 (content
 	  ;; content of current entry, excluding children
@@ -165,7 +118,7 @@ excluding the :PROPERTIES: drawer (if any)."
     (cons heading body)))
 
 (defun ai-org-chat--get-ancestors ()
-  "Return list of ancestors the current entry.
+  "Return list of ancestors of the current entry.
 Each ancestor is represented by a cons cell (heading . body),
 where heading and body are as in the docstring for
 `ai-org-chat--current-heading-and-body'."
@@ -208,8 +161,9 @@ response is inserted after the next \"AI\" heading and before the
 next \"User\" heading."
   (interactive)
   (let ((messages (append
-		   `(((role . "system")
-		      (content . ,ai-org-chat-prompt-preamble)))
+                   (when ai-org-chat-system-message
+		     `(((role . "system")
+		        (content . ,ai-org-chat-system-message))))
 		   (ai-org-chat--ancestor-messages)))
 	(point (save-excursion
                  (ai-org-chat--new-subtree ai-org-chat-ai-name)
@@ -251,7 +205,7 @@ Create org buffer with timestamped filename.  Enable
     (let ((path (expand-file-name file dir)))
       (find-file path)))
   (ai-org-chat-minor-mode)
-  (ai-org-chat-append-top-level-heading))
+  (ai-org-chat-branch))
 
 (defcustom ai-org-chat-region-filter-functions
   '(ai-org-chat--ensure-trailing-newline
@@ -303,18 +257,25 @@ into that buffer, applying the filters in the variable
       (newline 2)
       (insert region-contents))))
 
-;; TODO: modify this to insert heading just below the first AI entry
-;; above the current one, or top-level if no such entry exists.
-
 ;;;###autoload
-(defun ai-org-chat-append-top-level-heading ()
-  "Create new chat thread branch."
+(defun ai-org-chat-branch ()
+  "Create new chat branch.
+Find the first parent AI heading, and insert a new user heading
+below that, except when there are no parent AI headings (e.g.,
+we're at (point-min)), in which case insert a new top-level user
+heading."
   (interactive)
-  (goto-char (point-max))
-  (org-insert-heading t nil t)
-  (insert (concat ai-org-chat-user-name))
-  ;; (save-excursion (insert "\n"))
-  (insert "\n"))
+  (let ((not-at-top t))
+    (while
+        (and
+         (not (equal (org-get-heading t t) ai-org-chat-ai-name))
+         (setq not-at-top (org-up-heading-safe))))
+    (if not-at-top
+        (ai-org-chat--new-subtree ai-org-chat-user-name)
+      (goto-char (point-max))
+      (org-insert-heading t nil t)
+      (insert (concat ai-org-chat-user-name))
+      (insert "\n"))))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here

@@ -1,0 +1,60 @@
+#+title: ai-org-chat.el: Threaded chat with AI agent
+#+author: Paul Nelson
+
+* Overview
+This package supports a threaded AI chat inside any org-mode buffer.  Here's what it looks like:
+
+#+attr_html: :width 800px
+#+attr_latex: :width 800px
+[[./img/fruits.png]]
+
+The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a message.  The "plumbing" concerning API calls is outsourced to the [[https://github.com/karthink/gptel][gptel]] library, which requires the user to provide an OpenAI API key.  The narrowing features of org-mode provide a simple way to truncate the conversation history if it becomes too long.
+
+* Configuration
+This package depends upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
+
+#+begin_src elisp
+(use-package exec-path-from-shell
+  :ensure
+  :init
+  (exec-path-from-shell-initialize))
+  
+(use-package gptel
+  :ensure
+  :after exec-path-from-shell
+  :config
+  (setq gptel-api-key (exec-path-from-shell-getenv "OPENAI_API_KEY")))
+#+end_src
+
+Next, download this repository, install using =M-x package-install-file= (or package-vc-install, straight, elpaca, ...), and add =(use-package ai-org-chat)= to your [[https://www.emacswiki.org/emacs/InitFile][init file]].  For a slightly more elaborate configuration, use something like the following:
+
+#+begin_src elisp
+(use-package ai-org-chat
+  :bind
+  (:map global-map
+	("C-c /" . ai-org-chat-new))
+  (:map ai-org-chat-minor-mode
+	("C-c <return>" . ai-org-chat-respond)
+	("C-c n" . ai-org-chat-branch))
+  :commands (ai-org-chat-minor-mode)
+  :custom
+  (ai-org-chat-user-name "Paul")
+  (ai-org-chat-dir "~/gpt")
+  (ai-org-chat-prompt-preamble nil))
+#+end_src
+
+* Usage
+When you want to ask the AI something, do =M-x ai-org-chat-new=.  This will create a new file in the specified directory ("~/gpt" by default).  If the region was active, then it is quoted in the new buffer.  Here's what it looks like:
+
+#+attr_html: :width 800px
+#+attr_latex: :width 800px
+[[./img/animated.gif]]
+
+The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose is to support user-defined keybindings like in the above =use-package= declaration.  There are two useful commands:
+
+- =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
+- =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
+
+* Other packages
+There are many AI chat packages for emacs, but the ones of which I am aware focus on linear back-and-forth rather than multiple conversational pathways.  TODO: add some links
+
