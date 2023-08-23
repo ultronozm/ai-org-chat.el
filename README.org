@@ -8,7 +8,11 @@ This package supports a threaded AI chat inside any org-mode buffer.  Here's wha
 #+attr_latex: :width 800px
 [[./img/fruits.png]]
 
-The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a message.  The "plumbing" concerning API calls is outsourced to the [[https://github.com/karthink/gptel][gptel]] library, which requires the user to provide an OpenAI API key.  The narrowing features of org-mode provide a simple way to truncate the conversation history if it becomes too long.
+The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
+
+The "plumbing" concerning API calls is outsourced by default to the [[https://github.com/karthink/gptel][gptel]] library, which requires the user to provide an OpenAI API key.  By customizing the variable =ai-org-chat-request-fn=, any other backend could be used.
+
+Narrowing provides a simple way to truncate the conversation history if it becomes too long -- only the restricted part of the buffer is considered.
 
 * Configuration
 This package depends upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
@@ -44,7 +48,7 @@ Next, download this repository, install using =M-x package-install-file= (or pac
 #+end_src
 
 * Usage
-When you want to ask the AI something, do =M-x ai-org-chat-new=.  This will create a new file in the specified directory ("~/gpt" by default).  If the region was active, then it is quoted in the new buffer.  Here's what it looks like:
+When you want to ask the AI something, do =M-x ai-org-chat-new=.  This will create a new file in the specified directory ("~/gpt" by default).  If the region was active, then it will be quoted in the new buffer.  Here's what it looks like:
 
 #+attr_html: :width 800px
 #+attr_latex: :width 800px
