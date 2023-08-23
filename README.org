@@ -15,7 +15,7 @@ The "plumbing" concerning API calls is outsourced by default to the [[https://gi
 Narrowing provides a simple way to truncate the conversation history if it becomes too long -- only the restricted part of the buffer is considered.
 
 * Configuration
-This package depends upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
+This package depends (by default) upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
 
 #+begin_src elisp
 (use-package exec-path-from-shell
