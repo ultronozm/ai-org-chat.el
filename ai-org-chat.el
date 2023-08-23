@@ -173,6 +173,7 @@ next \"User\" heading."
 		 (point-marker))))
     (funcall ai-org-chat-request-fn messages point)))
 
+;;;###autoload
 (define-minor-mode ai-org-chat-minor-mode
   "Toggle ai-org-chat-minor-mode.
 With no argument, this command toggles the mode.
@@ -182,6 +183,7 @@ Null prefix argument turns off the mode."
   :keymap (let ((map (make-sparse-keymap)))
 	    map))
 
+;;;###autoload
 (defun ai-org-chat-new ()
   "Start new AI chat buffer, possibly with region contents.
 If the mark is active, then copy the region contents into the new
@@ -192,7 +194,6 @@ create an empty buffer."
       (ai-org-chat-new-region (region-beginning) (region-end))
     (ai-org-chat-new-empty)))
 
-;;;###autoload
 (defun ai-org-chat-new-empty ()
   "Create new AI chat buffer.
 Create org buffer with timestamped filename.  Enable
@@ -241,7 +242,6 @@ or `latex-mode'."
            "#+end_src"))
       content)))
 
-;;;###autoload
 (defun ai-org-chat-new-region (beg end)
   "Start new AI chat, quoting region between BEG and END.
 Send user to an AI chat buffer.  Copy current region contents
