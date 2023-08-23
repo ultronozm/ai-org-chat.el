@@ -75,6 +75,10 @@ indicating where the response should be inserted."
   (gptel-request
    messages :position point :stream t :in-place t))
 
+
+;; The property drawer would be a natural place to store metadata
+;; related to the query (model, parameters, ...), which motivates
+;; excluding it from the "conversation".
 (defun ai-org-chat--org-entry-minus-properties (entry)
   "Remove properties drawer (if any) from ENTRY.
 ENTRY is text from an `org-mode' entry, excluding the heading and
