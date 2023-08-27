@@ -147,8 +147,8 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
 (defun ai-org-chat--new-subtree (heading)
   "Create new subtree with HEADING as heading."
   (org-insert-heading-after-current)
-  (org-demote-subtree)
-  (insert heading))
+  (insert heading)
+  (org-demote-subtree))
 
 ;;;###autoload
 (defun ai-org-chat-respond ()
