@@ -75,33 +75,36 @@ indicating where the response should be inserted."
   (gptel-request
    messages :position point :stream t :in-place t))
 
-
 ;; The property drawer would be a natural place to store metadata
 ;; related to the query (model, parameters, ...), which motivates
 ;; excluding it from the "conversation".
-(defun ai-org-chat--org-entry-minus-properties (entry)
-  "Remove properties drawer (if any) from ENTRY.
-ENTRY is text from an `org-mode' entry, excluding the heading and
+(defun ai-org-chat--content-minus-properties (content)
+  "Remove properties drawer (if any) from CONTENT.
+CONTENT is text from an `org-mode' entry, excluding the heading and
 any subtrees.  The properties drawer is a sequence of lines
 delimited by \":PROPERTIES:\" and \":END:\"."
-  (let* ((prop-start-re "^[ \t]*:PROPERTIES:[ \t]*$")
-         (prop-end-re "^[ \t]*:END:[ \t]*$")
-         (lines-without-property-drawer
-          (let* ((lines (split-string entry "\n"))
-                 (prop-start
-                  (cl-position-if
-                   (lambda (line) (string-match-p prop-start-re line))
-                   lines))
-                 (prop-end
-                  (when prop-start
-                    (cl-position-if
-                     (lambda (line) (string-match-p prop-end-re line))
-                     lines :from-end t))))
-            (if (and prop-start prop-end)
-                (append (cl-subseq lines 0 prop-start)
-                        (cl-subseq lines (1+ prop-end) (length lines)))
-              lines))))
-    (mapconcat 'identity (cdr lines-without-property-drawer) "\n")))
+  (let* ((beg-re "^[ \t]*:PROPERTIES:[ \t]*$")
+         (end-re "^[ \t]*:END:[ \t]*$")
+         (lines (split-string content "\n"))
+         (beg (cl-position-if (apply-partially #'string-match-p beg-re) lines))
+         (end (cl-position-if (apply-partially #'string-match-p end-re) lines))
+         (newlines (cdr (if (and beg end)
+                            (append (cl-subseq lines 0 beg)
+                                    (cl-subseq lines (1+ end)
+                                               (length lines)))
+                          lines))))
+    (mapconcat 'identity newlines "\n")))
+
+(defun ai-org-chat--current-entry-minus-children ()
+  "Return text of current entry, excluding children.
+The text includes the heading, but excludes any subtrees."
+  (save-excursion
+    (org-back-to-heading)
+    (buffer-substring-no-properties
+     (point)
+     (save-excursion
+       (outline-next-heading)
+       (point)))))
 
 (defun ai-org-chat--current-heading-and-body ()
   "Return cons cell with heading and body of current entry.
@@ -109,16 +112,8 @@ The heading excludes tags and TODO keywords.  The body consists
 of all text between the heading and the first subtree, but
 excluding the :PROPERTIES: drawer, if any."
   (let* ((heading (org-get-heading t t))
-	 (content
-	  ;; content of current entry, excluding children
-	  (save-excursion
-	    (org-back-to-heading)
-	    (buffer-substring-no-properties
-	     (point)
-	     (save-excursion
-	       (outline-next-heading)
-	       (point)))))
-	 (body (ai-org-chat--org-entry-minus-properties content)))
+	 (content (ai-org-chat--current-entry-minus-children))
+	 (body (ai-org-chat--content-minus-properties content)))
     (cons heading body)))
 
 (defun ai-org-chat--get-ancestors ()
