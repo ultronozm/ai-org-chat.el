@@ -189,7 +189,7 @@ If the mark is active, then copy the region contents into the new
 buffer, enclosed by an appropriate source block.  Otherwise,
 create an empty buffer."
   (interactive)
-  (if mark-active
+  (if (region-active-p)
       (ai-org-chat-new-region (region-beginning) (region-end))
     (ai-org-chat-new-empty)))
 
