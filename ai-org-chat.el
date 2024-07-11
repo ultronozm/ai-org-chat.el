@@ -43,28 +43,24 @@
 
 (defcustom ai-org-chat-ai-name "AI"
   "AI name to insert into buffer."
-  :type 'string
-  :group 'ai-org-chat)
+  :type 'string)
 
 (defcustom ai-org-chat-system-message nil
   "System message to use, if any.
 If this is nil, then a system message will be provided by
 `gptel'."
-  :type '(choice string (const nil))
-  :group 'ai-org-chat)
+  :type '(choice string (const nil)))
 
 (defcustom ai-org-chat-dir "~/gpt"
   "Directory for storing files created by `ai-org-chat-new'."
-  :type 'string
-  :group 'ai-org-chat)
+  :type 'string)
 
 (defcustom ai-org-chat-request-fn #'ai-org-chat--request
   "Function to call to get a response from OpenAI.
 MESSAGES and POINT are as in the docstring for
 `ai-org-chat--request'.  Modify this if you want to use some
 backend other than `gptel'."
-  :type 'function
-  :group 'ai-org-chat)
+  :type 'function)
 
 (defun ai-org-chat--request (messages point)
   "Use `gptel' library to get a response from OpenAI.
@@ -215,8 +211,7 @@ These functions are applied as preprocessing steps to the region
 passed to `ai-org-chat-new-region'.  Each function should accept
 two arguments: the region as a string, and the buffer from which
 it came.  It should return the processed string."
-  :type '(repeat function)
-  :group 'ai-org-chat)
+  :type '(repeat function))
 
 (defun ai-org-chat--ensure-trailing-newline (content _buffer)
   "Ensure that CONTENT ends with a newline."
