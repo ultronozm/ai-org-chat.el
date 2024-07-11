@@ -234,7 +234,11 @@ or `latex-mode'."
            (format "#+begin_src %s\n" mode)
            content
            "#+end_src"))
-      content)))
+      (concat
+       (format "#+begin_example\n")
+       content
+       "#+end_example"))))
+
 
 (defun ai-org-chat-new-region (beg end)
   "Start new AI chat, quoting region between BEG and END.
