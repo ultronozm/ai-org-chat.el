@@ -16,6 +16,8 @@ The "plumbing" concerning API calls is outsourced by default to the [[https://gi
 
 [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Narrowing.html][Narrowing]] provides a simple way to truncate the conversation history if it becomes too long -- only the restricted part of the buffer is considered.
 
+A "system message" (at least for OpenAI/Anthropic models; I haven't checked more generally) can be specified via the customization variable =ai-org-chat-system-message=.  "Context" can be passed along with the system message to share the contents of other Emacs buffers with the AI (see [[Context]]).
+
 * Configuration
 This package depends (by default) upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
 
@@ -38,15 +40,15 @@ Next, download this repository, install using =M-x package-install-file= (or pac
 (use-package ai-org-chat
   :bind
   (:map global-map
-	("C-c /" . ai-org-chat-new))
+	       ("C-c /" . ai-org-chat-new))
   (:map ai-org-chat-minor-mode
-	("C-c <return>" . ai-org-chat-respond)
-	("C-c n" . ai-org-chat-branch))
+	       ("C-c <return>" . ai-org-chat-respond)
+	       ("C-c n" . ai-org-chat-branch)
+        ("C-c c" . ai-org-chat-set-context))
   :commands (ai-org-chat-minor-mode)
   :custom
   (ai-org-chat-user-name "Paul")
-  (ai-org-chat-dir "~/gpt")
-  (ai-org-chat-prompt-preamble nil))
+  (ai-org-chat-dir "~/gpt"))
 #+end_src
 
 * Usage
@@ -56,7 +58,17 @@ When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if 
 #+attr_latex: :width 800px
 [[./img/animated.gif]]
 
-The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose is to support user-defined keybindings like in the above =use-package= declaration.  There are two useful commands:
+The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose is to support user-defined keybindings like in the above =use-package= declaration.  There are three useful commands:
 
 - =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
+- =ai-org-chat-set-context= :: This sets =ai-org-chat-context= (see below).
+
+* Context
+The buffer-local customization variable =ai-org-chat-context= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  In the latter two cases, the system message is appended with some of the contents of the visible buffers.
+- If =visible-contents= is selected, then we append the visible content of the visible buffers.
+- If =visible-buffers= is selected, then we append the complete content of the visible buffers.
+
+This makes the chat client behave a bit like a pair-programmer.
+
+This feature combines well with narrowing and ediff (TODO: document better, maybe with a video).

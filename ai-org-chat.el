@@ -69,7 +69,9 @@ MESSAGES is a list of alists, each of which has a `role' and a
 \"assistant\" (see the OpenAI API docs).  POINT is a marker
 indicating where the response should be inserted."
   (gptel-request
-   messages :position point :stream t :in-place t))
+      messages :position point :stream t :in-place t
+      :system (or ai-org-chat-system-message
+                  gptel--system-message)))
 
 ;; The property drawer would be a natural place to store metadata
 ;; related to the query (model, parameters, ...), which motivates
@@ -146,6 +148,79 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
   (insert heading)
   (org-demote-subtree))
 
+(defcustom ai-org-chat-context nil
+  "Whether to use the editor context in the next AI response.
+This can be either nil, `visible-contents', or `visible-buffers'."
+  :type '(choice (const nil) (const visible-contents) (const visible-buffers))
+  :local t)
+
+(defun ai-org-chat-set-context ()
+  "Set the value of `ai-org-chat-context'.
+Uses the same interface as `customize-set-variable'."
+  (interactive)
+  (require 'wid-edit)
+  (require 'cus-edit)
+  (let* ((variable 'ai-org-chat-context)
+         (type (custom-variable-type variable))
+         (current-value (symbol-value variable))
+         (prompt (format "Set %s to: " variable))
+         (value (widget-prompt-value type prompt current-value nil))
+         (comment (when current-prefix-arg
+                    (read-string "State comment: "))))
+    (customize-set-variable variable value comment)))
+
+(defun ai-org-chat--buffer-contents (window point-functions)
+  "Given a WINDOW, use POINT-FUNCTIONS to extract the buffer contents.
+Here POINT-FUNCTIONS is a list of two functions that should return the
+beginning and end of the desired region, respectively."
+  (with-current-buffer (window-buffer window)
+    (let* ((beg (funcall (nth 0 point-functions)))
+           (end (funcall (nth 1 point-functions)))
+           (content (buffer-substring-no-properties beg end))
+           (name (buffer-name)))
+      (format "%s\n%s\n" name
+              (ai-org-chat--enclose-in-src-block content (current-buffer))))))
+
+(defun ai-org-chat--get-relevant-windows ()
+  "Return list of windows whose buffer differs from the selected window."
+  (seq-remove
+   (lambda (window)
+     (eq (window-buffer window) (current-buffer)))
+   (window-list)))
+
+(defun ai-org-chat--get-context-content (context-type)
+  "Get content for the given CONTEXT-TYPE.
+Here CONTEXT-TYPE is either `visible-contents' or `visible-buffers'."
+  (let ((windows (ai-org-chat--get-relevant-windows))
+        (point-functions (if (eq context-type 'visible-contents)
+                             '(window-start window-end)
+                           '(point-min point-max))))
+    (when (eq context-type 'visible-buffers)
+      (setq windows (seq-uniq
+                     windows
+                     (lambda (a b)
+                       (eq (window-buffer a) (window-buffer b))))))
+    (mapconcat
+     (lambda (window)
+       (ai-org-chat--buffer-contents window point-functions))
+     windows
+     "\n")))
+
+(defun ai-org-chat--wrap-system-message (message)
+  "Wrap MESSAGE in a system message, adding context if appropriate.
+The context depends on the value of `ai-org-chat-context'."
+  (concat
+   message
+   (pcase ai-org-chat-context
+     ('visible-contents
+      (format "Visible buffer contents:\n\n%s\n"
+              (ai-org-chat--get-context-content 'visible-contents)))
+     ('visible-buffers
+      (format "Contents of visible buffers:\n\n%s\n"
+              (ai-org-chat--get-context-content 'visible-buffers)))
+     (_ ""))))  ; No additional context for other cases
+
+
 ;;;###autoload
 (defun ai-org-chat-respond ()
   "Insert response from OpenAI after current heading.
@@ -155,17 +230,22 @@ Retrieve conversation history via
 response is inserted after the next \"AI\" heading and before the
 next \"User\" heading."
   (interactive)
-  (let ((messages (append
-                   (when ai-org-chat-system-message
-		     `(((role . "system")
-		        (content . ,ai-org-chat-system-message))))
-		   (ai-org-chat--ancestor-messages)))
-	(point (save-excursion
-                 (ai-org-chat--new-subtree ai-org-chat-ai-name)
-                 (insert "\n")
-		 (save-excursion
-                   (ai-org-chat--new-subtree ai-org-chat-user-name))
-		 (point-marker))))
+  (let* ((ai-org-chat-system-message
+          (ai-org-chat--wrap-system-message
+           ai-org-chat-system-message))
+         (messages
+          (append
+           (when (and (eq gptel-backend gptel--openai)
+                      ai-org-chat-system-message)
+		           `(((role . "system")
+		              (content . ,ai-org-chat-system-message))))
+		         (ai-org-chat--ancestor-messages)))
+	        (point (save-excursion
+                  (ai-org-chat--new-subtree ai-org-chat-ai-name)
+                  (insert "\n")
+		                (save-excursion
+                    (ai-org-chat--new-subtree ai-org-chat-user-name))
+		                (point-marker))))
     (funcall ai-org-chat-request-fn messages point)))
 
 ;;;###autoload
