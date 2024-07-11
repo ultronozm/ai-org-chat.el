@@ -219,13 +219,17 @@ it came.  It should return the processed string."
       content
     (concat content "\n")))
 
+(defcustom ai-org-chat-modes-for-src-blocks '(latex-mode LaTeX-mode)
+  "List of modes for which to use src blocks."
+  :type '(repeat symbol))
+
 (defun ai-org-chat--enclose-in-src-block (content buffer)
   "Enclose CONTENT in a src block, if appropriate.
 A src block is used if BUFFER's major mode is a programming mode
-or `latex-mode'."
+or belongs to `ai-org-chat-modes-for-src-blocks'."
   (with-current-buffer buffer
     (if (or (derived-mode-p 'prog-mode)
-            (eq major-mode 'latex-mode))
+            (memq major-mode ai-org-chat-modes-for-src-blocks))
         (let ((mode (replace-regexp-in-string
                      "-mode\\'"
                      ""
