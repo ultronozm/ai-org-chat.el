@@ -40,10 +40,10 @@ Next, download this repository, install using =M-x package-install-file= (or pac
 (use-package ai-org-chat
   :bind
   (:map global-map
-	       ("C-c /" . ai-org-chat-new))
+        ("C-c /" . ai-org-chat-new))
   (:map ai-org-chat-minor-mode
-	       ("C-c <return>" . ai-org-chat-respond)
-	       ("C-c n" . ai-org-chat-branch)
+        ("C-c <return>" . ai-org-chat-respond)
+        ("C-c n" . ai-org-chat-branch)
         ("C-c c" . ai-org-chat-set-context))
   :commands (ai-org-chat-minor-mode)
   :custom
@@ -62,7 +62,7 @@ The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose i
 
 - =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
-- =ai-org-chat-set-context= :: This sets =ai-org-chat-context= (see below).
+- =ai-org-chat-set-context= (=C-c c=) :: This sets =ai-org-chat-context= (see below).
 
 * Context
 The buffer-local customization variable =ai-org-chat-context= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  In the latter two cases, the system message is appended with some of the contents of the visible buffers.
