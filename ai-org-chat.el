@@ -45,10 +45,18 @@
   "AI name to insert into buffer."
   :type 'string)
 
-(defcustom ai-org-chat-system-message nil
+(defcustom ai-org-chat-system-message
+  "You are a brilliant and helpful assistant living in Emacs.
+
+When quoting source blocks, DON'T USE MARKDOWN SYNTAX, but instead use Emacs org-mode syntax, e.g.
+#+begin_src elisp
+  (number-sequence 0 9)
+#+end_src
+
+Similarly, when mentioning keywords, DON'T use markdown syntax like `keyword`, but instead org-mode syntax like =keyword=.
+"
   "System message to use, if any.
-If this is nil, then a system message will be provided by
-`gptel'."
+If this is nil, then a system message will be provided by `gptel'."
   :type '(choice string (const nil)))
 
 (defcustom ai-org-chat-dir "~/gpt"
