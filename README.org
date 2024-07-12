@@ -41,11 +41,11 @@ Next, download this repository, install using =M-x package-install-file= (or pac
   :bind
   (:map global-map
         ("C-c /" . ai-org-chat-new))
-  (:map ai-org-chat-minor-mode
+  (:map ai-org-chat-minor-mode-map
         ("C-c <return>" . ai-org-chat-respond)
         ("C-c n" . ai-org-chat-branch)
         ("C-c e" . ai-org-chat-compare)
-        ("C-c s" . ai-org-chat-set-context-style)
+        ("C-c x" . ai-org-chat-set-context-style)
         ("C-c a" . ai-org-chat-add-context))
   :commands (ai-org-chat-minor-mode)
   :custom
