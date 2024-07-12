@@ -159,8 +159,8 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
   (insert heading)
   (org-demote-subtree))
 
-(defcustom ai-org-chat-context nil
-  "Whether to use the editor context in the next AI response.
+(defcustom ai-org-chat-context-style nil
+  "Type of editor context to send to the AI.
 This can be either nil, `visible-contents', or `visible-buffers'."
   :type '(choice (const nil) (const visible-contents) (const visible-buffers))
   :local t)
