@@ -67,12 +67,13 @@ The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose i
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
 - =ai-org-chat-compare= (=C-c e=) :: This launches an Ediff session, in a temporary tab, comparing the org-mode block at point with the contents of some other visible buffer (selected via ace-window in case there are multiple other buffers).  This is useful for studying and implementing changes suggested by the AI when programming.
 - =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style= (see [[Context]]).
+- =ai-org-chat-add-context= (=C-c a=) :: This adds context directly to the node at point (see [[Context]]).
 
 * Context
-The buffer-local customization variable =ai-org-chat-context= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  In the latter two cases, the system message is appended with some of the contents of the visible buffers.
-- If =visible-contents= is selected, then we append the visible content of the visible buffers.
-- If =visible-buffers= is selected, then we append the complete content of the visible buffers.
+The buffer-local customization variable =ai-org-chat-context-style= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  You can adjust its default value by tweaking the above =use-package= form.  When it is non-nil, the system message is appended with some of the contents of the visible buffers.  The contents are:
+- for =visible-contents=, the visible content of all visible buffers.
+- for =visible-buffers=, the complete content of all visible buffers.
 
-This makes the chat client behave a bit like a pair-programmer.
+This makes the chat client behave a bit like a pair-programmer, seeing what you see and responding to changes you make.  It pairs well with the =ai-org-chat-compare= feature, which
 
-This feature combines well with narrowing and ediff (TODO: document better, maybe with a video).
+You can use =ai-org-chat-add-context= to add permanent context (independent of which windows are visible) to the current node.  The context is specified by a list of buffers, contained in the :CONTEXT: property of the node.  Child nodes inherit the context of their parent nodes.
