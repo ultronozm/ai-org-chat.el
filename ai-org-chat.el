@@ -165,13 +165,15 @@ This can be either nil, `visible-contents', or `visible-buffers'."
   :type '(choice (const nil) (const visible-contents) (const visible-buffers))
   :local t)
 
-(defun ai-org-chat-set-context ()
-  "Set the value of `ai-org-chat-context'.
+(declare-function custom-variable-type "cus-edit")
+
+(defun ai-org-chat-set-context-style ()
+  "Set the value of `ai-org-chat-context-style'.
 Uses the same interface as `customize-set-variable'."
   (interactive)
   (require 'wid-edit)
   (require 'cus-edit)
-  (let* ((variable 'ai-org-chat-context)
+  (let* ((variable 'ai-org-chat-context-style)
          (type (custom-variable-type variable))
          (current-value (symbol-value variable))
          (prompt (format "Set %s to: " variable))
