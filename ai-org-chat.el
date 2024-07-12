@@ -447,10 +447,11 @@ source buffer and the duplicated tab."
     (condition-case err
         (progn
           (org-edit-special)
-          (let ((buf2 (current-buffer)))
-            (delete-window)
-            (when (> (count-windows) 1)
+          (let ((buf2 (current-buffer))
+                (ai-window (selected-window)))
+            (when (> (count-windows) 2)
               (call-interactively #'ace-window))
+            (delete-window ai-window)
             (let ((buf1 (current-buffer)))
               (let ((ediff-buf (ediff-buffers buf1 buf2)))
                 (with-current-buffer ediff-buf
