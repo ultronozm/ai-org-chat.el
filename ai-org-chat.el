@@ -68,21 +68,55 @@ If this is nil, then a system message will be provided by `gptel'."
 
 (defcustom ai-org-chat-request-fn #'ai-org-chat--request
   "Function to call to get a response from OpenAI.
-MESSAGES and POINT are as in the docstring for
-`ai-org-chat--request'.  Modify this if you want to use some
-backend other than `gptel'."
+See the docstring for `ai-org-chat--request'.  Modify this if you want
+to use some backend other than `gptel'."
   :type 'function)
 
-(defun ai-org-chat--request (messages point)
+(cl-defun ai-org-chat--gptel-request
+    (&optional prompt &key callback
+               (buffer (current-buffer))
+               position context dry-run
+               (stream nil) (in-place nil)
+               (system gptel--system-message))
+  "Wrapper for `gptel-request' that handles system messages appropriately.
+
+This function behaves like `gptel-request', but handles the system message
+differently based on the backend:
+
+- For gptel--openai backend: Appends the system message as a \"system\"
+  role entry in the list of messages.
+
+- For other backends: Passes the system message in the usual way.
+
+All arguments are the same as in `gptel-request'. See its documentation
+for details."
+  (let* ((is-openai (eq gptel-backend gptel--openai))
+         (adjusted-prompt
+          (if (and is-openai system (listp prompt))
+              (append `(((role . "system")
+                         (content . ,system)))
+                      prompt)
+            prompt))
+         (adjusted-system (unless is-openai system)))
+    (gptel-request adjusted-prompt
+      :callback callback
+      :buffer buffer
+      :position position
+      :context context
+      :dry-run dry-run
+      :stream stream
+      :in-place in-place
+      :system adjusted-system)))
+
+(defun ai-org-chat--request (messages point &optional system)
   "Use `gptel' library to get a response from OpenAI.
-MESSAGES is a list of alists, each of which has a `role' and a
-`content' key.  `role' is either \"system\", \"user\" or
-\"assistant\" (see the OpenAI API docs).  POINT is a marker
-indicating where the response should be inserted."
-  (gptel-request
-      messages :position point :stream t :in-place t
-      :system (or ai-org-chat-system-message
-                  gptel--system-message)))
+MESSAGES is a list of alists, each of which has a `role' and a `content'
+key.  `role' is either \"user\" or \"assistant\" (see the OpenAI API
+docs).  POINT is a marker indicating where the response should be
+inserted.  SYSTEM is the system message."
+  (ai-org-chat--gptel-request
+   messages :position point :stream t :in-place t
+   :system (or system gptel--system-message)))
 
 ;; The property drawer would be a natural place to store metadata
 ;; related to the query (model, parameters, ...), which motivates
@@ -274,23 +308,16 @@ Retrieve conversation history via
 response is inserted after the next \"AI\" heading and before the
 next \"User\" heading."
   (interactive)
-  (let* ((ai-org-chat-system-message
-          (ai-org-chat--wrap-system-message
-           ai-org-chat-system-message))
-         (messages
-          (append
-           (when (and (eq gptel-backend gptel--openai)
-                      ai-org-chat-system-message)
-             `(((role . "system")
-                (content . ,ai-org-chat-system-message))))
-           (ai-org-chat--ancestor-messages)))
+  (let* ((system (ai-org-chat--wrap-system-message
+                  ai-org-chat-system-message))
+         (messages (ai-org-chat--ancestor-messages))
          (point (save-excursion
                   (ai-org-chat--new-subtree ai-org-chat-ai-name)
                   (insert "\n")
                   (save-excursion
                     (ai-org-chat--new-subtree ai-org-chat-user-name))
                   (point-marker))))
-    (funcall ai-org-chat-request-fn messages point)))
+    (funcall ai-org-chat-request-fn messages point system)))
 
 ;;;###autoload
 (define-minor-mode ai-org-chat-minor-mode
