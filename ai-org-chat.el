@@ -336,7 +336,6 @@ or belongs to `ai-org-chat-modes-for-src-blocks'."
        content
        "#+end_example"))))
 
-
 (defun ai-org-chat-new-region (beg end)
   "Start new AI chat, quoting region between BEG and END.
 Send user to an AI chat buffer.  Copy current region contents
@@ -371,6 +370,38 @@ heading."
       (org-insert-heading t nil t)
       (insert (concat ai-org-chat-user-name))
       (insert "\n"))))
+
+(declare-function ediff-cleanup-mess "ediff")
+(declare-function ace-window "ace-window")
+
+;;;###autoload
+(defun ai-org-chat-compare ()
+  "Compare a source block with a selected window using ediff.
+This function duplicates the current tab, opens the source block at
+point in a separate buffer, prompts the user to select a window, and
+then runs ediff to compare the source block buffer with the selected
+window's buffer.  When ediff is finished, it automatically closes the
+source buffer and the duplicated tab."
+  (interactive)
+  (require 'ace-window)
+  (let ((org-src-window-setup 'current-window))
+    (org-edit-special)
+    (tab-duplicate)
+    (let ((buf2 (current-buffer)))
+      (delete-window)
+      (when (> (count-windows) 1)
+        (call-interactively #'ace-window))
+      (let ((buf1 (current-buffer)))
+        (let ((ediff-buf (ediff-buffers buf1 buf2)))
+          (with-current-buffer ediff-buf
+            (add-hook 'ediff-quit-hook
+                      (lambda ()
+                        (when (buffer-live-p buf2)
+                          (with-current-buffer buf2
+                            (org-edit-src-exit)))
+                        (ediff-cleanup-mess)
+                        (tab-bar-close-tab))
+                      nil t)))))))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here

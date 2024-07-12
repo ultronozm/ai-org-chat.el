@@ -44,7 +44,9 @@ Next, download this repository, install using =M-x package-install-file= (or pac
   (:map ai-org-chat-minor-mode
         ("C-c <return>" . ai-org-chat-respond)
         ("C-c n" . ai-org-chat-branch)
-        ("C-c c" . ai-org-chat-set-context))
+        ("C-c e" . ai-org-chat-compare)
+        ("C-c s" . ai-org-chat-set-context-style)
+        ("C-c a" . ai-org-chat-add-context))
   :commands (ai-org-chat-minor-mode)
   :custom
   (ai-org-chat-user-name "Paul")
@@ -62,7 +64,8 @@ The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose i
 
 - =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
-- =ai-org-chat-set-context= (=C-c c=) :: This sets =ai-org-chat-context= (see below).
+- =ai-org-chat-compare= (=C-c e=) :: This launches an Ediff session, in a temporary tab, comparing the org-mode block at point with the contents of some other visible buffer (selected via ace-window in case there are multiple other buffers).  This is useful for studying and implementing changes suggested by the AI when programming.
+- =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style= (see [[Context]]).
 
 * Context
 The buffer-local customization variable =ai-org-chat-context= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  In the latter two cases, the system message is appended with some of the contents of the visible buffers.
