@@ -121,8 +121,8 @@ The heading excludes tags and TODO keywords.  The body consists
 of all text between the heading and the first subtree, but
 excluding the :PROPERTIES: drawer, if any."
   (let* ((heading (org-get-heading t t))
-	 (content (ai-org-chat--current-entry-minus-children))
-	 (body (ai-org-chat--content-minus-properties content)))
+  (content (ai-org-chat--current-entry-minus-children))
+  (body (ai-org-chat--content-minus-properties content)))
     (cons heading body)))
 
 (defun ai-org-chat--get-ancestors ()
@@ -147,9 +147,9 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
   (mapcar
    (lambda (ancestor)
      (let* ((heading (car ancestor))
-	    (content (cdr ancestor))
-	    (role (if (equal heading ai-org-chat-ai-name)
-		      "assistant" "user")))
+     (content (cdr ancestor))
+     (role (if (equal heading ai-org-chat-ai-name)
+        "assistant" "user")))
        `((role . ,role) (content . ,content))))
    (ai-org-chat--get-ancestors)))
 
@@ -200,7 +200,8 @@ beginning and end of the desired region, respectively."
     (save-excursion
       (let ((not-done t))
         (while not-done
-          (let ((context (org-entry-get-multivalued-property (point) "CONTEXT")))
+          (let ((context
+                 (org-entry-get-multivalued-property (point) "CONTEXT")))
             (when context
               (setq buffers (append buffers context))))
           (setq not-done (org-up-heading-safe)))))
@@ -280,15 +281,15 @@ next \"User\" heading."
           (append
            (when (and (eq gptel-backend gptel--openai)
                       ai-org-chat-system-message)
-		           `(((role . "system")
-		              (content . ,ai-org-chat-system-message))))
-		         (ai-org-chat--ancestor-messages)))
-	        (point (save-excursion
+             `(((role . "system")
+                (content . ,ai-org-chat-system-message))))
+           (ai-org-chat--ancestor-messages)))
+         (point (save-excursion
                   (ai-org-chat--new-subtree ai-org-chat-ai-name)
                   (insert "\n")
-		                (save-excursion
+                  (save-excursion
                     (ai-org-chat--new-subtree ai-org-chat-user-name))
-		                (point-marker))))
+                  (point-marker))))
     (funcall ai-org-chat-request-fn messages point)))
 
 ;;;###autoload
@@ -299,7 +300,7 @@ Non-null prefix argument turns on the mode.
 Null prefix argument turns off the mode."
   :lighter nil
   :keymap (let ((map (make-sparse-keymap)))
-	           map))
+            map))
 
 ;;;###autoload
 (defun ai-org-chat-new ()
@@ -318,7 +319,7 @@ Create org buffer with timestamped filename.  Enable
 `ai-chat-minor-mode'.  Insert a top-level heading."
   (interactive)
   (let ((dir ai-org-chat-dir)
-	(file (format-time-string "gpt-%Y%m%dT%H%M%S.org")))
+        (file (format-time-string "gpt-%Y%m%dT%H%M%S.org")))
     (unless (file-directory-p dir)
       (make-directory dir t))
     (let ((path (expand-file-name file dir)))
@@ -437,11 +438,15 @@ source buffer and the duplicated tab."
   "Add selected buffers as context for the current org node."
   (interactive)
   (let* ((all-buffers (mapcar #'buffer-name (buffer-list)))
-         (selected-buffers (completing-read-multiple "Select buffers to add to permanent context: " all-buffers))
-         (current-context (org-entry-get-multivalued-property (point) "CONTEXT"))
+         (selected-buffers (completing-read-multiple
+                            "Select buffers to add to permanent context: "
+                            all-buffers))
+         (current-context
+          (org-entry-get-multivalued-property (point) "CONTEXT"))
          (new-buffers (delete-dups (append current-context selected-buffers))))
     (apply #'org-entry-put-multivalued-property (point) "CONTEXT" new-buffers)
-    (message "Added %d buffer(s) to permanent context" (length selected-buffers))))
+    (message "Added %d buffer(s) to permanent context"
+             (length selected-buffers))))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
