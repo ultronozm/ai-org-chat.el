@@ -416,23 +416,28 @@ source buffer and the duplicated tab."
   (interactive)
   (require 'ace-window)
   (let ((org-src-window-setup 'current-window))
-    (org-edit-special)
     (tab-duplicate)
-    (let ((buf2 (current-buffer)))
-      (delete-window)
-      (when (> (count-windows) 1)
-        (call-interactively #'ace-window))
-      (let ((buf1 (current-buffer)))
-        (let ((ediff-buf (ediff-buffers buf1 buf2)))
-          (with-current-buffer ediff-buf
-            (add-hook 'ediff-quit-hook
-                      (lambda ()
-                        (when (buffer-live-p buf2)
-                          (with-current-buffer buf2
-                            (org-edit-src-exit)))
-                        (ediff-cleanup-mess)
-                        (tab-bar-close-tab))
-                      nil t)))))))
+    (condition-case err
+        (progn
+          (org-edit-special)
+          (let ((buf2 (current-buffer)))
+            (delete-window)
+            (when (> (count-windows) 1)
+              (call-interactively #'ace-window))
+            (let ((buf1 (current-buffer)))
+              (let ((ediff-buf (ediff-buffers buf1 buf2)))
+                (with-current-buffer ediff-buf
+                  (add-hook 'ediff-quit-hook
+                            (lambda ()
+                              (when (buffer-live-p buf2)
+                                (with-current-buffer buf2
+                                  (org-edit-src-exit)))
+                              (ediff-cleanup-mess)
+                              (tab-bar-close-tab))
+                            nil t))))))
+      (error
+       (tab-bar-close-tab)
+       (signal (car err) (cdr err))))))
 
 (defun ai-org-chat-add-context ()
   "Add selected buffers as context for the current org node."
