@@ -76,4 +76,4 @@ The buffer-local customization variable =ai-org-chat-context-style= can currentl
 
 This makes the chat client behave a bit like a pair-programmer, seeing what you see and responding to changes you make.  It pairs well with the =ai-org-chat-compare= feature, which
 
-You can use =ai-org-chat-add-context= to add permanent context (independent of which windows are visible) to the current node.  The context is specified by a list of buffers, contained in the :CONTEXT: property of the node.  Child nodes inherit the context of their parent nodes.
+You can use =ai-org-chat-add-context= to add permanent context (independent of which windows are visible) to the current node.  The context is specified by a list of buffers, contained in the :CONTEXT: property of the node.  Child nodes inherit the context of their parent nodes.  You can use a top-level property drawer to set context for an entire file.
