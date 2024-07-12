@@ -194,45 +194,75 @@ beginning and end of the desired region, respectively."
       (format "%s\n%s\n" name
               (ai-org-chat--enclose-in-src-block content (current-buffer))))))
 
-(defun ai-org-chat--get-relevant-windows ()
-  "Return list of windows whose buffer differs from the selected window."
-  (seq-remove
-   (lambda (window)
-     (eq (window-buffer window) (current-buffer)))
-   (window-list)))
+(defun ai-org-chat--get-permanent-context-buffers ()
+  "Get list of permanent context buffer names from current and ancestor nodes."
+  (let ((buffers '()))
+    (save-excursion
+      (let ((not-done t))
+        (while not-done
+          (let ((context (org-entry-get-multivalued-property (point) "CONTEXT")))
+            (when context
+              (setq buffers (append buffers context))))
+          (setq not-done (org-up-heading-safe)))))
+    (delete-dups buffers)))
 
-(defun ai-org-chat--get-context-content (context-type)
-  "Get content for the given CONTEXT-TYPE.
-Here CONTEXT-TYPE is either `visible-contents' or `visible-buffers'."
-  (let ((windows (ai-org-chat--get-relevant-windows))
-        (point-functions (if (eq context-type 'visible-contents)
-                             '(window-start window-end)
-                           '(point-min point-max))))
-    (when (eq context-type 'visible-buffers)
-      (setq windows (seq-uniq
-                     windows
-                     (lambda (a b)
-                       (eq (window-buffer a) (window-buffer b))))))
+(defun ai-org-chat--get-context-content ()
+  "Get context content."
+  (let ((windows (seq-remove
+                  (lambda (window)
+                    (eq (window-buffer window) (current-buffer)))
+                  (window-list))))
+    ;; remove redundant windows
+    (setq windows (seq-uniq
+                   windows
+                   (lambda (a b)
+                     (eq (window-buffer a) (window-buffer b)))))
+    ;; remove permanent context buffers
+    (setq windows (seq-remove
+                   (lambda (window)
+                     (member (buffer-name (window-buffer window))
+                             (ai-org-chat--get-permanent-context-buffers)))
+                   windows))
     (mapconcat
      (lambda (window)
-       (ai-org-chat--buffer-contents window point-functions))
+       (ai-org-chat--buffer-contents
+        window
+        (if (eq ai-org-chat-context-style 'visible-contents)
+            '(window-start window-end)
+          '(point-min point-max))))
      windows
+     "\n")))
+
+(defun ai-org-chat--get-permanent-context-content ()
+  "Get content of permanent context buffers."
+  (let ((permanent-buffers (ai-org-chat--get-permanent-context-buffers)))
+    (mapconcat
+     (lambda (buffer-name)
+       (when (get-buffer buffer-name)
+         (with-current-buffer (get-buffer buffer-name)
+           (format "%s\n%s\n" buffer-name
+                   (ai-org-chat--enclose-in-src-block
+                    (buffer-substring-no-properties (point-min) (point-max))
+                    (current-buffer))))))
+     permanent-buffers
      "\n")))
 
 (defun ai-org-chat--wrap-system-message (message)
   "Wrap MESSAGE in a system message, adding context if appropriate.
-The context depends on the value of `ai-org-chat-context'."
-  (concat
-   message
-   (pcase ai-org-chat-context
-     ('visible-contents
-      (format "Visible buffer contents:\n\n%s\n"
-              (ai-org-chat--get-context-content 'visible-contents)))
-     ('visible-buffers
-      (format "Contents of visible buffers:\n\n%s\n"
-              (ai-org-chat--get-context-content 'visible-buffers)))
-     (_ ""))))  ; No additional context for other cases
-
+The context depends on the value of `ai-org-chat-context-style'."
+  (let ((permanent-context (ai-org-chat--get-permanent-context-content)))
+    (concat
+     message
+     (when (not (string-empty-p permanent-context))
+       (format "Selected buffers contents:\n\n%s\n" permanent-context))
+     (pcase ai-org-chat-context-style
+       ('visible-contents
+        (format "Visible buffer contents:\n\n%s\n"
+                (ai-org-chat--get-context-content)))
+       ('visible-buffers
+        (format "Contents of visible buffers:\n\n%s\n"
+                (ai-org-chat--get-context-content)))
+       (_ "")))))  ; No additional context for other cases
 
 ;;;###autoload
 (defun ai-org-chat-respond ()
@@ -263,13 +293,13 @@ next \"User\" heading."
 
 ;;;###autoload
 (define-minor-mode ai-org-chat-minor-mode
-  "Toggle ai-org-chat-minor-mode.
+  "Toggle `ai-org-chat-minor-mode'.
 With no argument, this command toggles the mode.
 Non-null prefix argument turns on the mode.
 Null prefix argument turns off the mode."
   :lighter nil
   :keymap (let ((map (make-sparse-keymap)))
-	    map))
+	           map))
 
 ;;;###autoload
 (defun ai-org-chat-new ()
@@ -402,6 +432,16 @@ source buffer and the duplicated tab."
                         (ediff-cleanup-mess)
                         (tab-bar-close-tab))
                       nil t)))))))
+
+(defun ai-org-chat-add-context ()
+  "Add selected buffers as context for the current org node."
+  (interactive)
+  (let* ((all-buffers (mapcar #'buffer-name (buffer-list)))
+         (selected-buffers (completing-read-multiple "Select buffers to add to permanent context: " all-buffers))
+         (current-context (org-entry-get-multivalued-property (point) "CONTEXT"))
+         (new-buffers (delete-dups (append current-context selected-buffers))))
+    (apply #'org-entry-put-multivalued-property (point) "CONTEXT" new-buffers)
+    (message "Added %d buffer(s) to permanent context" (length selected-buffers))))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
