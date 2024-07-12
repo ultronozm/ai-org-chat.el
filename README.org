@@ -50,7 +50,8 @@ Next, download this repository, install using =M-x package-install-file= (or pac
   :commands (ai-org-chat-minor-mode)
   :custom
   (ai-org-chat-user-name "Paul")
-  (ai-org-chat-dir "~/gpt"))
+  (ai-org-chat-dir "~/gpt")
+  (ai-org-chat-context-style 'visible-buffers))
 #+end_src
 
 * Usage
