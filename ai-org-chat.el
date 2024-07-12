@@ -230,7 +230,7 @@ beginning and end of the desired region, respectively."
 
 (defun ai-org-chat--get-permanent-context-buffers ()
   "Get list of permanent context buffer names from current and ancestor nodes."
-  (let ((buffers '()))
+  (let ((buffers (org-entry-get-multivalued-property (point-min) "CONTEXT")))
     (save-excursion
       (let ((not-done t))
         (while not-done
@@ -273,12 +273,14 @@ beginning and end of the desired region, respectively."
   (let ((permanent-buffers (ai-org-chat--get-permanent-context-buffers)))
     (mapconcat
      (lambda (buffer-name)
-       (when (get-buffer buffer-name)
-         (with-current-buffer (get-buffer buffer-name)
-           (format "%s\n%s\n" buffer-name
-                   (ai-org-chat--enclose-in-src-block
-                    (buffer-substring-no-properties (point-min) (point-max))
-                    (current-buffer))))))
+       (if (get-buffer buffer-name)
+           (with-current-buffer (get-buffer buffer-name)
+             (format "%s\n%s\n" buffer-name
+                     (ai-org-chat--enclose-in-src-block
+                      (buffer-substring-no-properties (point-min) (point-max))
+                      (current-buffer))))
+         (warn "Buffer %s not found" buffer-name)
+         nil))
      permanent-buffers
      "\n")))
 
