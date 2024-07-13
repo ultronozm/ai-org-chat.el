@@ -342,6 +342,15 @@ create an empty buffer."
       (ai-org-chat-new-region (region-beginning) (region-end))
     (ai-org-chat-new-empty)))
 
+(defconst ai-org-chat-local-variables
+  "* Config
+# Local Variables:
+# mode: org
+# eval: (ai-org-chat-minor-mode 1)
+# End:
+"
+  "Local variables to insert into new AI chat buffers.")
+
 (defun ai-org-chat-new-empty ()
   "Create new AI chat buffer.
 Create org buffer with timestamped filename.  Enable
@@ -354,6 +363,9 @@ Create org buffer with timestamped filename.  Enable
     (let ((path (expand-file-name file dir)))
       (find-file path)))
   (ai-org-chat-minor-mode)
+  (insert ai-org-chat-local-variables)
+  (goto-char (point-min))
+  (org-hide-entry)
   (ai-org-chat-branch))
 
 (defcustom ai-org-chat-region-filter-functions
