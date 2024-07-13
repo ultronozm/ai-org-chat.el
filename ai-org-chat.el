@@ -228,18 +228,19 @@ beginning and end of the desired region, respectively."
       (format "%s\n%s\n" name
               (ai-org-chat--enclose-in-src-block content (current-buffer))))))
 
-(defun ai-org-chat--get-permanent-context-buffers ()
-  "Get list of permanent context buffer names from current and ancestor nodes."
-  (let ((buffers (org-entry-get-multivalued-property (point-min) "CONTEXT")))
+(defun ai-org-chat--get-permanent-context-items ()
+  "Get list of permanent context buffer names or file paths.
+Uses current and ancestor nodes."
+  (let ((items (org-entry-get-multivalued-property (point-min) "CONTEXT")))
     (save-excursion
       (let ((not-done t))
         (while not-done
           (let ((context
                  (org-entry-get-multivalued-property (point) "CONTEXT")))
             (when context
-              (setq buffers (append buffers context))))
+              (setq items (append items context))))
           (setq not-done (org-up-heading-safe)))))
-    (delete-dups buffers)))
+    (delete-dups items)))
 
 (defun ai-org-chat--get-context-content ()
   "Get context content."
@@ -256,7 +257,7 @@ beginning and end of the desired region, respectively."
     (setq windows (seq-remove
                    (lambda (window)
                      (member (buffer-name (window-buffer window))
-                             (ai-org-chat--get-permanent-context-buffers)))
+                             (ai-org-chat--get-permanent-context-items)))
                    windows))
     (mapconcat
      (lambda (window)
@@ -269,19 +270,28 @@ beginning and end of the desired region, respectively."
      "\n")))
 
 (defun ai-org-chat--get-permanent-context-content ()
-  "Get content of permanent context buffers."
-  (let ((permanent-buffers (ai-org-chat--get-permanent-context-buffers)))
+  "Get content of permanent context buffers and files."
+  (let ((permanent-items (ai-org-chat--get-permanent-context-items)))
     (mapconcat
-     (lambda (buffer-name)
-       (if (get-buffer buffer-name)
-           (with-current-buffer (get-buffer buffer-name)
-             (format "%s\n%s\n" buffer-name
-                     (ai-org-chat--enclose-in-src-block
-                      (buffer-substring-no-properties (point-min) (point-max))
-                      (current-buffer))))
-         (warn "Buffer %s not found" buffer-name)
-         nil))
-     permanent-buffers
+     (lambda (item)
+       (cond
+        ((get-buffer item)
+         (with-current-buffer (get-buffer item)
+           (format "%s\n%s\n" item
+                   (ai-org-chat--enclose-in-src-block
+                    (buffer-substring-no-properties (point-min) (point-max))
+                    (current-buffer)))))
+        ((file-exists-p item)
+         (format "%s\n%s\n" item
+                 (ai-org-chat--enclose-in-src-block
+                  (with-temp-buffer
+                    (insert-file-contents item)
+                    (buffer-string))
+                  (find-buffer-visiting item))))
+        (t
+         (warn "Item %s not found as buffer or file" item)
+         nil)))
+     permanent-items
      "\n")))
 
 (defun ai-org-chat--wrap-system-message (message)
@@ -476,19 +486,37 @@ source buffer and the duplicated tab."
        (tab-bar-close-tab)
        (signal (car err) (cdr err))))))
 
-(defun ai-org-chat-add-context ()
+(defun ai-org-chat--add-context (items)
+  "Helper function to add context to the current org node.
+ITEMS is a list of strings to add to the context."
+  (let* ((current-context
+          (org-entry-get-multivalued-property (point) "CONTEXT"))
+         (new-items (delete-dups (append current-context items))))
+    (apply #'org-entry-put-multivalued-property (point) "CONTEXT" new-items)
+    (message "Added %d item(s) to permanent context"
+             (length items))))
+
+;;;###autoload
+(defun ai-org-chat-add-buffer-context ()
   "Add selected buffers as context for the current org node."
   (interactive)
-  (let* ((all-buffers (mapcar #'buffer-name (buffer-list)))
-         (selected-buffers (completing-read-multiple
-                            "Select buffers to add to permanent context: "
-                            all-buffers))
-         (current-context
-          (org-entry-get-multivalued-property (point) "CONTEXT"))
-         (new-buffers (delete-dups (append current-context selected-buffers))))
-    (apply #'org-entry-put-multivalued-property (point) "CONTEXT" new-buffers)
-    (message "Added %d buffer(s) to permanent context"
-             (length selected-buffers))))
+  (let ((selected-buffers
+         (completing-read-multiple
+          "Select buffers to add to permanent context: "
+          (mapcar #'buffer-name (buffer-list)))))
+    (ai-org-chat--add-context selected-buffers)))
+
+;;;###autoload
+(defun ai-org-chat-add-file-context ()
+  "Add selected files as context for the current org node."
+  (interactive)
+  (let ((selected-files
+         (completing-read-multiple
+          "Enter file paths to add to permanent context: "
+          #'read-file-name-internal)))
+    (ai-org-chat--add-context selected-files)))
+
+
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
