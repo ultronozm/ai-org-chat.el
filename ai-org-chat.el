@@ -361,7 +361,7 @@ Create org buffer with timestamped filename.  Enable
   (ai-org-chat-minor-mode)
   (insert ai-org-chat-local-variables)
   (goto-char (point-min))
-  (org-hide-entry)
+  (org-fold-hide-entry)
   (ai-org-chat-branch))
 
 (defcustom ai-org-chat-region-filter-functions
