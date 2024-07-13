@@ -343,11 +343,7 @@ create an empty buffer."
     (ai-org-chat-new-empty)))
 
 (defconst ai-org-chat-local-variables
-  "* Config
-# Local Variables:
-# mode: org
-# eval: (ai-org-chat-minor-mode 1)
-# End:
+  "# -*- eval: (ai-org-chat-minor-mode 1); -*-
 "
   "Local variables to insert into new AI chat buffers.")
 
