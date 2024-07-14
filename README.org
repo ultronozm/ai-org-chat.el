@@ -51,7 +51,8 @@ Next, download this repository, install using =M-x package-install-file= (or pac
         ("C-c e" . ai-org-chat-compare)
         ("C-c x" . ai-org-chat-set-context-style)
         ("C-c a b" . ai-org-chat-add-buffer-context)
-        ("C-c a f" . ai-org-chat-add-file-context))
+        ("C-c a f" . ai-org-chat-add-file-context)
+        ("C-c a p" . ai-org-chat-add-project-files-context))
   :commands (ai-org-chat-setup-buffer)
   :custom
   (ai-org-chat-user-name "Paul")
@@ -76,8 +77,9 @@ There are a few useful commands:
 
 There are also a few commands concerning context (see [[Context]] below).
 - =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style=.
-- =ai-org-chat-add-buffer-context= (=C-c a b=) :: This adds buffers as context directly to the node at point.
-- =ai-org-chat-add-buffer-context= (=C-c a f=) :: This adds files as context directly to the node at point.
+- =ai-org-chat-add-buffer-context= (=C-c a b=) :: This adds buffers as context to the node at point.
+- =ai-org-chat-add-buffer-context= (=C-c a f=) :: This adds files as context to the node at point.
+- =ai-org-chat-add-project-context= (=C-c a p=) :: This adds the contents of a project as context to the node at point.
 
 * Context
 The buffer-local customization variable =ai-org-chat-context-style= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  You can adjust its default value by tweaking the above =use-package= form.  When it is non-nil, the system message is appended with some of the contents of the visible buffers.  The contents are:
@@ -86,4 +88,4 @@ The buffer-local customization variable =ai-org-chat-context-style= can currentl
 
 This makes the chat client behave a bit like a pair-programmer, seeing what you see and responding to changes you make.  It pairs well with the =ai-org-chat-compare= feature, which
 
-The commands =ai-org-chat-add-buffer-context= and =ai-org-chat-add-file-context= add "permanent" context, independent of which windows are visible, to the current node.  The context is specified by a list of files or buffers, contained in the :CONTEXT: property of the node.  Child nodes inherit the context of their parent nodes.  You can use a top-level property drawer to set context for an entire file.
+The commands =ai-org-chat-add-buffer-context= and =ai-org-chat-add-file-context= add "permanent" context, independent of which windows are visible, to the current node.  The context is specified by a list of files or buffers, contained in the :CONTEXT: property of the node.  Child nodes inherit the context of their parent nodes.  You can use a top-level property drawer to set context for an entire file.  The convenience function =ai-org-chat-add-project-context= adds all the files in a project to the context.

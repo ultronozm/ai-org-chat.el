@@ -531,6 +531,31 @@ ITEMS is a list of strings to add to the context."
           #'completion-file-name-table)))
     (ai-org-chat--add-context selected-files)))
 
+(require 'project)
+
+(defun ai-org-chat-add-project-files-context (dir)
+  "Add all files from a selected project as context for current org node.
+Prompts for the project to use and excludes the current file.  DIR is
+the directory of the selected project."
+  (interactive (list (funcall project-prompter)))
+  (let ((project (project-current nil dir))
+        (current-file (buffer-file-name)))
+    (if (not project)
+        (error "No project found for directory %s" dir)
+      (let* ((project-files (project-files project))
+             (relative-files
+              (mapcar (lambda (file)
+                        (file-relative-name file default-directory))
+                      project-files))
+             (filtered-files
+              (remove (and current-file
+                           (file-relative-name current-file default-directory))
+                      relative-files)))
+        (ai-org-chat--add-context filtered-files)
+        (message "Added %d files from project %s as context"
+                 (length filtered-files)
+                 (project-root project))))))
+
 
 
 (provide 'ai-org-chat)
