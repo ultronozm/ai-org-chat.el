@@ -513,7 +513,7 @@ ITEMS is a list of strings to add to the context."
 
 ;;;###autoload
 (defun ai-org-chat-add-buffer-context ()
-  "Add selected buffers as context for the current org node."
+  "Add selected buffers as context for current org node."
   (interactive)
   (let ((selected-buffers
          (completing-read-multiple
@@ -523,12 +523,12 @@ ITEMS is a list of strings to add to the context."
 
 ;;;###autoload
 (defun ai-org-chat-add-file-context ()
-  "Add selected files as context for the current org node."
+  "Add selected files as context for current org node."
   (interactive)
   (let ((selected-files
          (completing-read-multiple
           "Enter file paths to add to permanent context: "
-          #'read-file-name-internal)))
+          #'completion-file-name-table)))
     (ai-org-chat--add-context selected-files)))
 
 
