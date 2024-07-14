@@ -561,7 +561,7 @@ the directory of the selected project."
   (save-excursion
     (goto-char (point-min))
     (while (re-search-forward
-            "```\\([a-zA-Z0-9]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)```" nil t)
+            "```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)```" nil t)
       (let ((lang (match-string 1))
             (code (match-string 3)))
         (replace-match (format "#+begin_src %s\n%s\n#+end_src"
