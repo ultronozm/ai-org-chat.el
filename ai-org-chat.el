@@ -226,7 +226,7 @@ beginning and end of the desired region, respectively."
            (content (buffer-substring-no-properties beg end))
            (name (buffer-name)))
       (format "%s\n%s\n" name
-              (ai-org-chat--enclose-in-src-block content (current-buffer))))))
+              (ai-org-chat--enclose-in-src-block content major-mode)))))
 
 (defun ai-org-chat--get-permanent-context-items ()
   "Get list of permanent context buffer names or file paths.
@@ -280,19 +280,26 @@ Uses current and ancestor nodes."
            (format "%s\n%s\n" item
                    (ai-org-chat--enclose-in-src-block
                     (buffer-substring-no-properties (point-min) (point-max))
-                    (current-buffer)))))
+                    major-mode))))
         ((file-exists-p item)
-         (format "%s\n%s\n" item
-                 (ai-org-chat--enclose-in-src-block
-                  (with-temp-buffer
-                    (insert-file-contents item)
-                    (buffer-string))
-                  (find-buffer-visiting item))))
+         (let* ((mode (ai-org-chat--get-mode-for-file item))
+                (content (with-temp-buffer
+                           (insert-file-contents item)
+                           (buffer-string))))
+           (format "%s\n%s\n" item
+                   (ai-org-chat--enclose-in-src-block content mode))))
         (t
          (warn "Item %s not found as buffer or file" item)
          nil)))
      permanent-items
      "\n")))
+
+(defun ai-org-chat--get-mode-for-file (filename)
+  "Determine the major mode that would be used for FILENAME."
+  (let ((mode (assoc-default filename auto-mode-alist 'string-match)))
+    (if (and mode (symbolp mode))
+        mode
+      'fundamental-mode)))
 
 (defun ai-org-chat--wrap-system-message (message)
   "Wrap MESSAGE in a system message, adding context if appropriate.
@@ -341,17 +348,6 @@ Null prefix argument turns off the mode."
   :keymap (let ((map (make-sparse-keymap)))
             map))
 
-;;;###autoload
-(defun ai-org-chat-new ()
-  "Start new AI chat buffer, possibly with region contents.
-If the mark is active, then copy the region contents into the new
-buffer, enclosed by an appropriate source block.  Otherwise,
-create an empty buffer."
-  (interactive)
-  (if (region-active-p)
-      (ai-org-chat-new-region (region-beginning) (region-end))
-    (ai-org-chat-new-empty)))
-
 (defconst ai-org-chat-local-variables
   "# -*- eval: (ai-org-chat-minor-mode 1); -*-
 "
@@ -377,41 +373,40 @@ Create org buffer with timestamped filename.  Enable
   '(ai-org-chat--ensure-trailing-newline
     ai-org-chat--enclose-in-src-block)
   "List of functions to call on quoted region contents.
-These functions are applied as preprocessing steps to the region
-passed to `ai-org-chat-new-region'.  Each function should accept
-two arguments: the region as a string, and the buffer from which
-it came.  It should return the processed string."
+These functions are applied as preprocessing steps to the region passed
+to `ai-org-chat-new-region'.  Each function should accept two arguments:
+the region as a string, and the major-mode for the buffer from which it
+came.  It should return the processed string."
   :type '(repeat function))
 
-(defun ai-org-chat--ensure-trailing-newline (content _buffer)
+(defun ai-org-chat--ensure-trailing-newline (content _mode)
   "Ensure that CONTENT ends with a newline."
   (if (string-match "\n\\'" content)
       content
     (concat content "\n")))
 
-(defcustom ai-org-chat-modes-for-src-blocks '(latex-mode LaTeX-mode)
+(defcustom ai-org-chat-modes-for-src-blocks '(tex-mode latex-mode LaTeX-mode)
   "List of modes for which to use src blocks."
   :type '(repeat symbol))
 
-(defun ai-org-chat--enclose-in-src-block (content buffer)
+(defun ai-org-chat--enclose-in-src-block (content mode)
   "Enclose CONTENT in a src block, if appropriate.
-A src block is used if BUFFER's major mode is a programming mode
+A src block is used if MODE is a programming mode
 or belongs to `ai-org-chat-modes-for-src-blocks'."
-  (with-current-buffer buffer
-    (if (or (derived-mode-p 'prog-mode)
-            (memq major-mode ai-org-chat-modes-for-src-blocks))
-        (let ((mode (replace-regexp-in-string
-                     "-mode\\'"
-                     ""
-                     (symbol-name major-mode))))
-          (concat
-           (format "#+begin_src %s\n" mode)
-           content
-           "#+end_src"))
-      (concat
-       (format "#+begin_example\n")
-       content
-       "#+end_example"))))
+  (if (or (provided-mode-derived-p mode 'prog-mode)
+          (memq mode ai-org-chat-modes-for-src-blocks))
+      (let ((mode-name (replace-regexp-in-string
+                        "-mode\\'"
+                        ""
+                        (symbol-name mode))))
+        (concat
+         (format "#+begin_src %s\n" mode-name)
+         content
+         "#+end_src"))
+    (concat
+     "#+begin_example\n"
+     content
+     "#+end_example")))
 
 (defun ai-org-chat-new-region (beg end)
   "Start new AI chat, quoting region between BEG and END.
@@ -422,11 +417,22 @@ into that buffer, applying the filters in the variable
   (let ((region-contents
          (buffer-substring-no-properties beg end)))
     (dolist (filter ai-org-chat-region-filter-functions)
-      (setq region-contents (funcall filter region-contents (current-buffer))))
+      (setq region-contents (funcall filter region-contents major-mode)))
     (ai-org-chat-new-empty)
     (save-excursion
       (newline 2)
       (insert region-contents))))
+
+;;;###autoload
+(defun ai-org-chat-new ()
+  "Start new AI chat buffer, possibly with region contents.
+If the mark is active, then copy the region contents into the new
+buffer, enclosed by an appropriate source block.  Otherwise,
+create an empty buffer."
+  (interactive)
+  (if (region-active-p)
+      (ai-org-chat-new-region (region-beginning) (region-end))
+    (ai-org-chat-new-empty)))
 
 ;;;###autoload
 (defun ai-org-chat-branch ()
