@@ -443,7 +443,6 @@ create an empty buffer."
       (ai-org-chat-new-region (region-beginning) (region-end))
     (ai-org-chat-new-empty)))
 
-;;;###autoload
 (defun ai-org-chat-branch ()
   "Create new chat branch.
 Find the first parent AI heading, and insert a new user heading
@@ -466,7 +465,6 @@ heading."
 (declare-function ediff-cleanup-mess "ediff")
 (declare-function ace-window "ace-window")
 
-;;;###autoload
 (defun ai-org-chat-compare ()
   "Compare a source block with a selected window using ediff.
 This function duplicates the current tab, opens the source block at
@@ -511,7 +509,6 @@ ITEMS is a list of strings to add to the context."
     (message "Added %d item(s) to permanent context"
              (length items))))
 
-;;;###autoload
 (defun ai-org-chat-add-buffer-context ()
   "Add selected buffers as context for current org node."
   (interactive)
@@ -521,7 +518,6 @@ ITEMS is a list of strings to add to the context."
           (mapcar #'buffer-name (buffer-list)))))
     (ai-org-chat--add-context selected-buffers)))
 
-;;;###autoload
 (defun ai-org-chat-add-file-context ()
   "Add selected files as context for current org node."
   (interactive)
