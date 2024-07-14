@@ -353,21 +353,30 @@ Null prefix argument turns off the mode."
 "
   "Local variables to insert into new AI chat buffers.")
 
+;;;###autoload
+(defun ai-org-chat-setup-buffer ()
+  "Set up the current buffer for AI chat.
+Ensure the buffer is in `org-mode', enable `ai-org-chat-minor-mode',
+insert local variables, and add initial heading."
+  (interactive)
+  (unless (eq major-mode 'org-mode)
+    (user-error "Buffer must be in org-mode to set up AI chat"))
+  (ai-org-chat-minor-mode)
+  (goto-char (point-min))
+  (insert ai-org-chat-local-variables)
+  (ai-org-chat-branch))
+
 (defun ai-org-chat-new-empty ()
   "Create new AI chat buffer.
-Create org buffer with timestamped filename.  Enable
-`ai-chat-minor-mode'.  Insert a top-level heading."
+Create org buffer with timestamped filename and set it up for AI chat."
   (interactive)
-  (let ((dir ai-org-chat-dir)
-        (file (format-time-string "gpt-%Y%m%dT%H%M%S.org")))
+  (let* ((dir ai-org-chat-dir)
+         (file (format-time-string "gpt-%Y%m%dT%H%M%S.org"))
+         (path (expand-file-name file dir)))
     (unless (file-directory-p dir)
       (make-directory dir t))
-    (let ((path (expand-file-name file dir)))
-      (find-file path)))
-  (ai-org-chat-minor-mode)
-  (insert ai-org-chat-local-variables)
-  (goto-char (point-min))
-  (ai-org-chat-branch))
+    (find-file path)
+    (ai-org-chat-setup-buffer)))
 
 (defcustom ai-org-chat-region-filter-functions
   '(ai-org-chat--ensure-trailing-newline
