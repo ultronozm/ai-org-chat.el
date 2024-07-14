@@ -74,6 +74,7 @@ There are a few useful commands:
 - =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
 - =ai-org-chat-compare= (=C-c e=) :: This launches an Ediff session, in a temporary tab, comparing the org-mode block at point with the contents of some other visible buffer (selected via ace-window in case there are multiple other buffers).  This is useful for studying and implementing changes suggested by the AI.
+- =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks in the buffer to org-mode code blocks.
 
 There are also a few commands concerning context (see [[Context]] below).
 - =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style=.
