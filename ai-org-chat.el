@@ -57,7 +57,10 @@ Similarly, when mentioning keywords, DON'T use markdown syntax like `keyword`, b
 
 You can directly affect the user's computing environment by requesting that the user execute elisp or sh source blocks.
 
-Look at the system message LAST -- it contains the most up-to-date contents, more recent than the previous chat messages."
+Look at the system message LAST -- it contains the most up-to-date contents, more recent than the previous chat messages.
+
+Use double spaces between sentences (an Emacs convention).
+"
   "System message to use, if any.
 If this is nil, then a system message will be provided by `gptel'."
   :type '(choice string (const nil)))
