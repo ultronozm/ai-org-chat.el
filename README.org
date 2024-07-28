@@ -8,7 +8,7 @@ This package supports a threaded AI chat inside any org-mode buffer.  Here's wha
 #+attr_latex: :width 800px
 [[./img/fruits.png]]
 
-The design is inspired by the ChatGPT web interface.  There are [[https://www.reddit.com/r/emacs/comments/14glmqc/use_emacs_as_a_chatgpt_app/][many AI chat packages]] for Emacs, but I am not aware of any that naturally support multiple conversational pathways.  (Update: [[https://github.com/karthink/gptel][gptel]] now has a similar feature, which I haven't yet tried; it depends upon an pre-release version of Org.)  I'm also using this package as a way to experiment with ways to tighten the editing loop with AI in Emacs, via context, diffs, etc.
+The design is inspired by the ChatGPT web interface.  There are [[https://www.reddit.com/r/emacs/comments/14glmqc/use_emacs_as_a_chatgpt_app/][many AI chat packages]] for Emacs, but I am not aware of any that naturally support multiple conversational pathways.  (Update: [[https://github.com/karthink/gptel][gptel]] now has a similar feature, which I haven't yet tried; it depends upon an pre-release version of Org.)  I'm also using this package as an experiment in ways to tighten the editing loop with AI in Emacs, via context, diffs, etc.
 
 The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
 
@@ -57,7 +57,7 @@ Next, download this repository, install using =M-x package-install-file= (or pac
   :custom
   (ai-org-chat-user-name "Paul")
   (ai-org-chat-dir "~/gpt")
-  (ai-org-chat-context-style 'visible-buffers))
+  (ai-org-chat-context-style nil))
 #+end_src
 
 * Usage
