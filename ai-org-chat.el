@@ -184,11 +184,40 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
   (mapcar
    (lambda (ancestor)
      (let* ((heading (car ancestor))
-     (content (cdr ancestor))
-     (role (if (equal heading ai-org-chat-ai-name)
-        "assistant" "user")))
-       `((role . ,role) (content . ,content))))
+            (content (cdr ancestor))
+            (role (if (equal heading ai-org-chat-ai-name)
+                      (if (string-match-p "gemini" gptel-model)
+                          "model"
+                        "assistant")
+                    "user")))
+       (if (string-match-p "gemini" gptel-model)
+           `((role . ,role)
+             (parts . ((text . ,content)) ))
+         `((role . ,role)
+           (content . ,content)))))
    (ai-org-chat--get-ancestors)))
+
+
+(defun ai-org-chat--prepend-context-to-first-user-message (messages context)
+  "Prepend CONTEXT to the content of the first 'user' message in MESSAGES.
+Works with both standard and Gemini-specific message formats."
+  (let ((first-user-message-found nil))
+    (mapcar
+     (lambda (message)
+       (if (and (not first-user-message-found)
+                (equal (alist-get 'role message) "user"))
+           (progn
+             (setq first-user-message-found t)
+             (if (alist-get 'parts message)
+                 ;; Gemini-specific format
+                 `((role . "user")
+                   (parts . ((text . ,(concat context "\n\n"
+                                              (alist-get 'text (alist-get 'parts message)))))))
+               ;; Standard format
+               `((role . "user")
+                 (content . ,(concat context "\n\n" (alist-get 'content message))))))
+         message))
+     messages)))
 
 (defun ai-org-chat--new-subtree (heading)
   "Create new subtree with HEADING as heading."
@@ -224,8 +253,14 @@ Uses the same interface as `customize-set-variable'."
 Here POINT-FUNCTIONS is a list of two functions that should return the
 beginning and end of the desired region, respectively."
   (with-current-buffer (window-buffer window)
-    (let* ((beg (funcall (nth 0 point-functions)))
-           (end (funcall (nth 1 point-functions)))
+    (let* ((beg
+            (max
+             (point-min)
+             (funcall (nth 0 point-functions))))
+           (end
+            (min
+             (point-max)
+             (funcall (nth 1 point-functions))))
            (content (buffer-substring-no-properties beg end))
            (name (buffer-name)))
       (format "%s\n%s\n" name
@@ -304,12 +339,11 @@ Uses current and ancestor nodes."
         mode
       'fundamental-mode)))
 
-(defun ai-org-chat--wrap-system-message (message)
+(defun ai-org-chat--context ()
   "Wrap MESSAGE in a system message, adding context if appropriate.
 The context depends on the value of `ai-org-chat-context-style'."
   (let ((permanent-context (ai-org-chat--get-permanent-context-content)))
     (concat
-     message
      (when (not (string-empty-p permanent-context))
        (format "Selected buffers contents:\n\n%s\n" permanent-context))
      (pcase ai-org-chat-context-style
@@ -321,6 +355,7 @@ The context depends on the value of `ai-org-chat-context-style'."
                 (ai-org-chat--get-context-content)))
        (_ "")))))  ; No additional context for other cases
 
+
 ;;;###autoload
 (defun ai-org-chat-respond ()
   "Insert response from OpenAI after current heading.
@@ -330,8 +365,9 @@ Retrieve conversation history via
 response is inserted after the next \"AI\" heading and before the
 next \"User\" heading."
   (interactive)
-  (let* ((system (ai-org-chat--wrap-system-message
-                  ai-org-chat-system-message))
+  (let* ((system ai-org-chat-system-message)
+         (context (ai-org-chat--context))
+         (system-context (concat system "\n" context))
          (messages (ai-org-chat--ancestor-messages))
          (point (save-excursion
                   (ai-org-chat--new-subtree ai-org-chat-ai-name)
@@ -339,7 +375,11 @@ next \"User\" heading."
                   (save-excursion
                     (ai-org-chat--new-subtree ai-org-chat-user-name))
                   (point-marker))))
-    (funcall ai-org-chat-request-fn messages point system)))
+    (funcall ai-org-chat-request-fn
+             (ai-org-chat--prepend-context-to-first-user-message
+              messages system-context)
+             point
+             nil)))
 
 ;;;###autoload
 (define-minor-mode ai-org-chat-minor-mode
