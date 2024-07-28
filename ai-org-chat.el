@@ -199,7 +199,7 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
 
 
 (defun ai-org-chat--prepend-context-to-first-user-message (messages context)
-  "Prepend CONTEXT to the content of the first 'user' message in MESSAGES.
+  "Prepend CONTEXT to the content of the first `user' message in MESSAGES.
 Works with both standard and Gemini-specific message formats."
   (let ((first-user-message-found nil))
     (mapcar
@@ -229,24 +229,26 @@ Works with both standard and Gemini-specific message formats."
   "Type of editor context to send to the AI.
 This can be either nil, `visible-contents', or `visible-buffers'."
   :type '(choice (const nil) (const visible-contents) (const visible-buffers))
-  :local t)
+  :local t
+  :safe #'symbolp)
 
 (declare-function custom-variable-type "cus-edit")
 
 (defun ai-org-chat-set-context-style ()
-  "Set the value of `ai-org-chat-context-style'.
-Uses the same interface as `customize-set-variable'."
+  "Set the value of `ai-org-chat-context-style' as a file-local variable.
+Using the prop line, at top of file."
   (interactive)
   (require 'wid-edit)
   (require 'cus-edit)
   (let* ((variable 'ai-org-chat-context-style)
          (type (custom-variable-type variable))
-         (current-value (symbol-value variable))
-         (prompt (format "Set %s to: " variable))
-         (value (widget-prompt-value type prompt current-value nil))
-         (comment (when current-prefix-arg
-                    (read-string "State comment: "))))
-    (customize-set-variable variable value comment)))
+         (current-value (if (local-variable-p variable)
+                            (buffer-local-value variable (current-buffer))
+                          (default-value variable)))
+         (prompt (format "Set %s to (file-local): " variable))
+         (value (widget-prompt-value type prompt current-value nil)))
+    (add-file-local-variable-prop-line variable value)
+    (message "Set %s to %s (file-locally)" variable value)))
 
 (defun ai-org-chat--buffer-contents (window point-functions)
   "Given a WINDOW, use POINT-FUNCTIONS to extract the buffer contents.

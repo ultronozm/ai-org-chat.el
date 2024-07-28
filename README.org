@@ -77,7 +77,7 @@ There are a few useful commands:
 - =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks in the buffer to org-mode code blocks.
 
 There are also a few commands concerning context (see [[Context]] below).
-- =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style=.
+- =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style= as a file local variable.
 - =ai-org-chat-add-buffer-context= (=C-c a b=) :: This adds buffers as context to the node at point.
 - =ai-org-chat-add-buffer-context= (=C-c a f=) :: This adds files as context to the node at point.
 - =ai-org-chat-add-project-context= (=C-c a p=) :: This adds the contents of a project as context to the node at point.
