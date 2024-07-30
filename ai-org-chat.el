@@ -245,10 +245,13 @@ Using the prop line, at top of file."
          (current-value (if (local-variable-p variable)
                             (buffer-local-value variable (current-buffer))
                           (default-value variable)))
-         (prompt (format "Set %s to (file-local): " variable))
+         (prompt (format "Set %s to: " variable))
          (value (widget-prompt-value type prompt current-value nil)))
+    ;; Set as file-local variable
     (add-file-local-variable-prop-line variable value)
-    (message "Set %s to %s (file-locally)" variable value)))
+    ;; Set as buffer-local variable
+    (set (make-local-variable variable) value)
+    (message "Set %s to %s (file-locally and buffer-locally)" variable value)))
 
 (defun ai-org-chat--buffer-contents (window point-functions)
   "Given a WINDOW, use POINT-FUNCTIONS to extract the buffer contents.
