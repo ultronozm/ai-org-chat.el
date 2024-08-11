@@ -248,7 +248,8 @@ Using the prop line, at top of file."
          (prompt (format "Set %s to: " variable))
          (value (widget-prompt-value type prompt current-value nil)))
     ;; Set as file-local variable
-    (add-file-local-variable-prop-line variable value)
+    (save-excursion
+      (add-file-local-variable-prop-line variable value))
     ;; Set as buffer-local variable
     (set (make-local-variable variable) value)
     (message "Set %s to %s (file-locally and buffer-locally)" variable value)))
