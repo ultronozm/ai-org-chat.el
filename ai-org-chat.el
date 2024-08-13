@@ -37,6 +37,12 @@
   "Threaded chat with AI agent in org buffers."
   :group 'hypermedia)
 
+(defcustom ai-org-chat-provider nil
+  "The LLM provider to use for AI chat.
+This should be an instance of an LLM provider created using the `llm'
+package (e.g., via `make-llm-openai')."
+  :type 'symbol)
+
 (defcustom ai-org-chat-user-name "User"
   "User name to insert into buffer."
   :type 'string)
@@ -75,51 +81,24 @@ See the docstring for `ai-org-chat--request'.  Modify this if you want
 to use some backend other than `gptel'."
   :type 'function)
 
-(cl-defun ai-org-chat--gptel-request
-    (&optional prompt &key callback
-               (buffer (current-buffer))
-               position context dry-run
-               (stream nil) (in-place nil)
-               (system gptel--system-message))
-  "Wrapper for `gptel-request' that handles system messages appropriately.
-
-This function behaves like `gptel-request', but handles the system message
-differently based on the backend:
-
-- For gptel--openai backend: Appends the system message as a \"system\"
-  role entry in the list of messages.
-
-- For other backends: Passes the system message in the usual way.
-
-All arguments are the same as in `gptel-request'. See its documentation
-for details."
-  (let* ((is-openai (eq gptel-backend gptel--openai))
-         (adjusted-prompt
-          (if (and is-openai system (listp prompt))
-              (append `(((role . "system")
-                         (content . ,system)))
-                      prompt)
-            prompt))
-         (adjusted-system (unless is-openai system)))
-    (gptel-request adjusted-prompt
-      :callback callback
-      :buffer buffer
-      :position position
-      :context context
-      :dry-run dry-run
-      :stream stream
-      :in-place in-place
-      :system adjusted-system)))
-
 (defun ai-org-chat--request (messages point &optional system)
-  "Use `gptel' library to get a response from OpenAI.
-MESSAGES is a list of alists, each of which has a `role' and a `content'
-key.  `role' is either \"user\" or \"assistant\" (see the OpenAI API
-docs).  POINT is a marker indicating where the response should be
-inserted.  SYSTEM is the system message."
-  (ai-org-chat--gptel-request
-   messages :position point :stream t :in-place t
-   :system (or system gptel--system-message)))
+  "Use `llm' library to get a response from the AI.
+   MESSAGES is a list of alists, each of which has a `role' and a `content'
+   key. POINT is a marker indicating where the response should be
+   inserted. SYSTEM is the system message."
+  (let* ((provider ai-org-chat-provider)
+         (formatted-messages
+          (mapcar (lambda (msg)
+                    (alist-get 'content msg))
+                  messages))
+         (prompt (llm-make-chat-prompt
+                  formatted-messages
+                  :context (or system gptel--system-message))))
+    (llm-chat-streaming-to-point provider
+                                 prompt
+                                 (marker-buffer point)
+                                 point
+                                 #'ignore)))
 
 ;; The property drawer would be a natural place to store metadata
 ;; related to the query (model, parameters, ...), which motivates
@@ -158,14 +137,14 @@ The heading excludes tags and TODO keywords.  The body consists
 of all text between the heading and the first subtree, but
 excluding the :PROPERTIES: drawer, if any."
   (let* ((heading (org-get-heading t t))
-  (content (ai-org-chat--current-entry-minus-children))
-  (body (ai-org-chat--content-minus-properties content)))
+         (content (ai-org-chat--current-entry-minus-children))
+         (body (ai-org-chat--content-minus-properties content)))
     (cons heading body)))
 
 (defun ai-org-chat--get-ancestors ()
   "Return list of ancestors of the current entry.
-Each ancestor is represented by a cons cell (heading . body),
-where heading and body are as in the docstring for
+Each ancestor is represented by a cons cell (heading . body), where
+heading and body are as in the docstring for
 `ai-org-chat--current-heading-and-body'."
   (let ((ancestors '()))
     (push (ai-org-chat--current-heading-and-body) ancestors)
@@ -196,28 +175,6 @@ whether the heading is equal to `ai-org-chat-ai-name'.  The
          `((role . ,role)
            (content . ,content)))))
    (ai-org-chat--get-ancestors)))
-
-
-(defun ai-org-chat--prepend-context-to-first-user-message (messages context)
-  "Prepend CONTEXT to the content of the first `user' message in MESSAGES.
-Works with both standard and Gemini-specific message formats."
-  (let ((first-user-message-found nil))
-    (mapcar
-     (lambda (message)
-       (if (and (not first-user-message-found)
-                (equal (alist-get 'role message) "user"))
-           (progn
-             (setq first-user-message-found t)
-             (if (alist-get 'parts message)
-                 ;; Gemini-specific format
-                 `((role . "user")
-                   (parts . ((text . ,(concat context "\n\n"
-                                              (alist-get 'text (alist-get 'parts message)))))))
-               ;; Standard format
-               `((role . "user")
-                 (content . ,(concat context "\n\n" (alist-get 'content message))))))
-         message))
-     messages)))
 
 (defun ai-org-chat--new-subtree (heading)
   "Create new subtree with HEADING as heading."
@@ -382,10 +339,9 @@ next \"User\" heading."
                     (ai-org-chat--new-subtree ai-org-chat-user-name))
                   (point-marker))))
     (funcall ai-org-chat-request-fn
-             (ai-org-chat--prepend-context-to-first-user-message
-              messages system-context)
+             messages
              point
-             nil)))
+             system-context)))
 
 ;;;###autoload
 (define-minor-mode ai-org-chat-minor-mode
