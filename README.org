@@ -79,8 +79,9 @@ There are a few useful commands:
 There are also a few commands concerning context (see [[Context]] below).
 - =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style= as a file local variable.
 - =ai-org-chat-add-buffer-context= (=C-c a b=) :: This adds buffers as context to the node at point.
-- =ai-org-chat-add-buffer-context= (=C-c a f=) :: This adds files as context to the node at point.
-- =ai-org-chat-add-project-context= (=C-c a p=) :: This adds the contents of a project as context to the node at point.
+- =ai-org-chat-add-visible-buffers-context= :: This adds all visible buffers as context.
+- =ai-org-chat-add-buffer-context= (=C-c a f=) :: This adds files as context.
+- =ai-org-chat-add-project-context= (=C-c a p=) :: This adds the contents of a project as context.
 
 * Context
 The buffer-local customization variable =ai-org-chat-context-style= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  You can adjust its default value by tweaking the above =use-package= form.  When it is non-nil, the system message is appended with some of the contents of the visible buffers.  The contents are:

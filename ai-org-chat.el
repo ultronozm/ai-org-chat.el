@@ -570,6 +570,22 @@ ITEMS is a list of strings to add to the context."
           (mapcar #'buffer-name (buffer-list)))))
     (ai-org-chat--add-context selected-buffers)))
 
+;;;###autoload
+(defun ai-org-chat-add-visible-buffers-context ()
+  "Add all visible buffers as context for current org node.
+Excludes current buffer."
+  (interactive)
+  (let* ((visible-windows (seq-remove
+                           (lambda (window)
+                             (eq (window-buffer window) (current-buffer)))
+                           (window-list)))
+         (visible-buffers (delete-dups
+                           (mapcar #'window-buffer visible-windows)))
+         (buffer-names (mapcar #'buffer-name visible-buffers)))
+    (ai-org-chat--add-context buffer-names)
+    (message "Added %d visible buffer(s) to permanent context"
+             (length buffer-names))))
+
 (defun ai-org-chat-add-file-context ()
   "Add selected files as context for current org node."
   (interactive)
