@@ -136,24 +136,122 @@ insert local variables, and add initial heading."
 
 ;;; Response generation
 
-(defun ai-org-chat--request (messages point &optional system)
-  "Use `llm' library to get a response from the AI.
-MESSAGES is a list of alists, each of which has a `role' and a `content'
-key.  POINT is a marker indicating where the response should be
-inserted.  SYSTEM is the system message."
-  (let* ((provider ai-org-chat-provider)
-         (formatted-messages
-          (mapcar (lambda (msg)
-                    (alist-get 'content msg))
-                  messages))
-         (prompt (llm-make-chat-prompt
-                  formatted-messages
-                  :context system)))
-    (llm-chat-streaming-to-point provider
-                                 prompt
-                                 (marker-buffer point)
-                                 point
-                                 #'ignore)))
+(defun ai-org-chat--insert-text (start end response)
+  "Insert RESPONSE at START, updating END marker."
+  (with-current-buffer (marker-buffer start)
+    (cond
+     ((stringp response)
+      (save-excursion
+        (goto-char start)
+        (let* ((current-text (buffer-substring-no-properties start end))
+               (common-prefix (fill-common-string-prefix
+                               current-text response))
+               (prefix-length (length common-prefix)))
+          (when (> prefix-length 0)
+            (goto-char (+ start prefix-length)))
+          (delete-region (point) end)
+          (insert (substring response prefix-length)))))
+     ((listp response)
+      (message "Response is a list: %s" response)))))
+
+(defun ai-org-chat--handle-final-response (prompt response end remaining-depth provider)
+  "Handle the final RESPONSE from the LLM.
+PROMPT is the original prompt used for the query.
+END is the marker for insertion.
+REMAINING-DEPTH determines how many more recursive calls are allowed.
+PROVIDER is the LLM service provider."
+  (cond
+   ((stringp response)
+    ;; Do nothing, as the response has already been inserted
+    nil)
+   ((and (listp response) (> remaining-depth 0))
+    (ai-org-chat-streaming-with-functions
+     provider
+     prompt
+     (marker-buffer end)
+     (marker-position end)
+     (1- remaining-depth)))
+   (t
+    (with-current-buffer (marker-buffer end)
+      (save-excursion
+        (goto-char (marker-position end))
+        (insert "\nMaximum recursive depth reached or unknown response type"))))))
+
+(defun ai-org-chat-streaming-with-functions (provider prompt buffer point remaining-depth)
+  "Stream the LLM output of PROMPT, inserting at POINT in BUFFER.
+PROVIDER supplies the LLM service. REMAINING-DEPTH determines how many more recursive calls are allowed."
+  (with-current-buffer buffer
+    (save-excursion
+      (let* ((start (make-marker))
+             (end (make-marker))
+             (captured-buffer buffer)
+             (partial-cb
+              (lambda (response)
+                (ai-org-chat--insert-text start end response)))
+             (final-cb
+              (lambda (response)
+                (message "Final response! %s" response)
+                (ai-org-chat--insert-text start end response)
+                (ai-org-chat--handle-final-response
+                 prompt response end remaining-depth provider)))
+             (error-cb
+              (lambda (err msg)
+                (save-current-buffer
+                  (set-buffer captured-buffer)
+                  (save-excursion
+                    (goto-char end)
+                    (insert (format "\nError: %s - %s\n" err msg)))
+                  (ai-org-chat--handle-final-response
+                   prompt (format "Error: %s - %s" err msg) end remaining-depth provider)))))
+        (set-marker start point)
+        (set-marker end point)
+        (set-marker-insertion-type start nil)
+        (set-marker-insertion-type end t)
+        (llm-chat-streaming provider prompt partial-cb final-cb error-cb)))))
+
+(defun ai-org-chat--insert-function-call (func args)
+  "Insert FUNC call with ARGS into the current org buffer."
+  (insert "\n:FUNCTION_CALL:\n"
+          (json-encode `((name . ,(llm-function-call-name func))
+                         (arguments . ,args)))
+          "\n:END:\n"))
+
+(defun ai-org-chat--insert-function-result (result)
+  "Insert RESULT of a function call into the current org buffer."
+  (insert "\n:FUNCTION_RESULT:\n"
+          (format "%s" result)
+          "\n:END:\n"))
+
+(defun ai-org-chat--wrapped-function-call (orig-func func marker args)
+  (let ((result (apply orig-func args)))
+    (with-current-buffer (marker-buffer marker)
+      (save-excursion
+        (goto-char (marker-position marker))
+        (ai-org-chat--insert-function-call func args)
+        (ai-org-chat--insert-function-result result)
+        (set-marker marker (point))))
+    result))
+
+(defun ai-org-chat--wrap-function (func marker)
+  "Wrap FUNC to log its calls and results in the org buffer at MARKER."
+  (let* ((orig-func (llm-function-call-function func))
+         (wrapped-func
+          (lambda (&rest args)
+            (let ((result (apply orig-func args)))
+              (with-current-buffer (marker-buffer marker)
+                (save-excursion
+                  (goto-char (marker-position marker))
+                  (ai-org-chat--insert-function-call func args)
+                  (ai-org-chat--insert-function-result result)
+                  (set-marker marker (point))))
+              result)
+            ;; (ai-org-chat--wrapped-function-call orig-func func marker args)
+            )))
+    (make-llm-function-call
+     :function wrapped-func
+     :name (llm-function-call-name func)
+     :description (llm-function-call-description func)
+     :args (llm-function-call-args func))))
 
 (defun ai-org-chat--new-subtree (heading)
   "Create new subtree with HEADING as heading."
@@ -161,14 +259,11 @@ inserted.  SYSTEM is the system message."
   (insert heading)
   (org-demote-subtree))
 
-;;;###autoload
+(defvar ai-org-chat-max-recursion-depth 3
+  "Maximum number of recursive calls allowed in ai-org-chat queries.")
+
 (defun ai-org-chat-respond ()
-  "Insert response from OpenAI after current heading.
-Retrieve conversation history via
-`ai-org-chat--ancestor-messages', then call
-`ai-org-chat-request-fn' to get a response from OpenAI.  The
-response is inserted after the next \"AI\" heading and before the
-next \"User\" heading."
+  "Insert response from llm after current heading in org buffer."
   (interactive)
   (let* ((system ai-org-chat-system-message)
          (context (ai-org-chat--context))
@@ -179,8 +274,22 @@ next \"User\" heading."
                   (insert "\n")
                   (save-excursion
                     (ai-org-chat--new-subtree ai-org-chat-user-name))
-                  (point-marker))))
-    (ai-org-chat--request messages point system-context)))
+                  (point-marker)))
+         (tools (mapcar (lambda (tool-symbol)
+                          (ai-org-chat--wrap-function
+                           (symbol-value (intern tool-symbol))
+                           point))
+                        (org-entry-get-multivalued-property (point) "TOOLS")))
+         (prompt (llm-make-chat-prompt
+                  messages
+                  :context system-context
+                  :functions tools)))
+    (ai-org-chat-streaming-with-functions
+     ai-org-chat-provider
+     prompt
+     (marker-buffer point)
+     (marker-position point)
+     ai-org-chat-max-recursion-depth)))
 
 ;;; Setting up new chats
 
