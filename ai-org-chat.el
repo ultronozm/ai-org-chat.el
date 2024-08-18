@@ -224,6 +224,8 @@ PROVIDER supplies the LLM service. REMAINING-DEPTH determines how many more recu
           "\n:END:\n\n"))
 
 (defun ai-org-chat--wrapped-function-call (orig-func func marker args)
+  "Call ORIG-FUNC with ARGS, logging call and result at MARKER.
+FUNC is the llm-function-call object."
   (let ((result (apply orig-func args)))
     (with-current-buffer (marker-buffer marker)
       (save-excursion
