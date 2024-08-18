@@ -32,6 +32,7 @@
 
 (require 'org)
 (require 'llm)
+(require 'json)
 
 (defgroup ai-org-chat nil
   "Threaded chat with AI agent in org buffers."
