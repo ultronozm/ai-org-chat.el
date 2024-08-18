@@ -643,7 +643,6 @@ source buffer and the duplicated tab."
   "Convert Markdown style code blocks in current buffer to org."
   (interactive)
   (save-excursion
-    (goto-char (point-min))
     (while (re-search-forward
             "```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)```" nil t)
       (let ((lang (match-string 1))
