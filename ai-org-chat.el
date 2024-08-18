@@ -221,7 +221,7 @@ PROVIDER supplies the LLM service. REMAINING-DEPTH determines how many more recu
   "Insert RESULT of a function call into the current org buffer."
   (insert "\n:FUNCTION_RESULT:\n"
           (format "%s" result)
-          "\n:END:\n"))
+          "\n:END:\n\n"))
 
 (defun ai-org-chat--wrapped-function-call (orig-func func marker args)
   (let ((result (apply orig-func args)))
