@@ -137,6 +137,12 @@ insert local variables, and add initial heading."
 
 ;;; Response generation
 
+(defcustom ai-org-chat-streaming-p t
+  "Whether to use streaming responses if available.
+If the LLM provider doesn't support streaming, then this will
+have no effect."
+  :type 'boolean)
+
 (defun ai-org-chat--insert-text (start end response)
   "Insert RESPONSE at START, updating END marker."
   (with-current-buffer (marker-buffer start)
@@ -155,60 +161,49 @@ insert local variables, and add initial heading."
      ((listp response)
       (message "Response is a list: %s" response)))))
 
-(defun ai-org-chat--handle-final-response (prompt response end remaining-depth provider)
+(defun ai-org-chat--handle-final-response (prompt response start end remaining-depth provider)
   "Handle the final RESPONSE from the LLM.
 PROMPT is the original prompt used for the query.
-END is the marker for insertion.
+START and END are markers for insertion.
 REMAINING-DEPTH determines how many more recursive calls are allowed.
 PROVIDER is the LLM service provider."
   (cond
    ((stringp response)
-    ;; Do nothing, as the response has already been inserted
-    nil)
+    (ai-org-chat--insert-text start end response))
    ((and (listp response) (> remaining-depth 0))
-    (ai-org-chat-streaming-with-functions
-     provider
-     prompt
-     (marker-buffer end)
-     (marker-position end)
-     (1- remaining-depth)))
+    (ai-org-chat-call-with-functions
+     provider prompt (marker-buffer end) (marker-position end) (1- remaining-depth)))
    (t
     (with-current-buffer (marker-buffer end)
       (save-excursion
-        (goto-char (marker-position end))
+        (goto-char end)
         (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
-(defun ai-org-chat-streaming-with-functions (provider prompt buffer point remaining-depth)
-  "Stream the LLM output of PROMPT, inserting at POINT in BUFFER.
-PROVIDER supplies the LLM service. REMAINING-DEPTH determines how many more recursive calls are allowed."
-  (with-current-buffer buffer
-    (save-excursion
-      (let* ((start (make-marker))
-             (end (make-marker))
-             (captured-buffer buffer)
-             (partial-cb
-              (lambda (response)
-                (ai-org-chat--insert-text start end response)))
-             (final-cb
-              (lambda (response)
-                (message "Final response! %s" response)
-                (ai-org-chat--insert-text start end response)
-                (ai-org-chat--handle-final-response
-                 prompt response end remaining-depth provider)))
-             (error-cb
-              (lambda (err msg)
-                (save-current-buffer
-                  (set-buffer captured-buffer)
-                  (save-excursion
-                    (goto-char end)
-                    (insert (format "\nError: %s - %s\n" err msg)))
-                  (ai-org-chat--handle-final-response
-                   prompt (format "Error: %s - %s" err msg) end remaining-depth provider)))))
-        (set-marker start point)
-        (set-marker end point)
-        (set-marker-insertion-type start nil)
-        (set-marker-insertion-type end t)
-        (llm-chat-streaming provider prompt partial-cb final-cb error-cb)))))
+(defun ai-org-chat-call-with-functions (provider prompt buffer point remaining-depth)
+  "Call the LLM, optionally streaming output to buffer.
+PROVIDER supplies the LLM service.  PROMPT is the input for the LLM.
+BUFFER and POINT specify where to insert the response.
+REMAINING-DEPTH determines how many more recursive calls are allowed."
+  (let* ((start (with-current-buffer buffer (copy-marker point nil)))
+         (end (with-current-buffer buffer (copy-marker point t)))
+         (captured-buffer buffer)
+         (partial-cb (when ai-org-chat-streaming-p
+                       (lambda (response)
+                         (ai-org-chat--insert-text start end response))))
+         (final-cb
+          (lambda (response)
+            (ai-org-chat--handle-final-response
+             prompt response start end remaining-depth provider)))
+         (error-cb
+          (lambda (err msg)
+            (with-current-buffer captured-buffer
+              (goto-char end)
+              (insert (format "\nError: %s - %s\n" err msg)))
+            (ai-org-chat--handle-final-response
+             prompt (format "Error: %s - %s" err msg) start end remaining-depth provider))))
+    (if ai-org-chat-streaming-p
+        (llm-chat-streaming provider prompt partial-cb final-cb error-cb)
+      (llm-chat-async provider prompt final-cb error-cb))))
 
 (defun ai-org-chat--insert-function-call (func args)
   "Insert FUNC call with ARGS into the current org buffer."
@@ -287,7 +282,7 @@ FUNC is the llm-function-call object."
                   messages
                   :context system-context
                   :functions tools)))
-    (ai-org-chat-streaming-with-functions
+    (ai-org-chat-call-with-functions
      ai-org-chat-provider
      prompt
      (marker-buffer point)
