@@ -359,10 +359,20 @@ into that buffer, applying the filters in the variable
 
 ;;;###autoload
 (defun ai-org-chat-new ()
-  "Start new AI chat buffer, possibly with region contents.
-If the mark is active, then copy the region contents into the new
-buffer, enclosed by an appropriate source block.  Otherwise,
-create an empty buffer."
+  "Start a new AI chat buffer, optionally including the active region.
+
+If the mark is active, this function copies the region contents into a new
+buffer, enclosing them in an appropriate source block.  The source block type
+is determined based on the major mode of the original buffer.  This is useful
+for starting a conversation about a specific piece of code or text.
+
+The new buffer is created with a timestamped filename in the directory
+specified by `ai-org-chat-dir'.  The buffer is set up with org-mode and
+`ai-org-chat-minor-mode' enabled.
+
+If no region is active, it creates an empty buffer ready for AI chat interaction.
+
+In both cases, the new buffer is set up with `ai-org-chat-minor-mode' enabled."
   (interactive)
   (if (region-active-p)
       (ai-org-chat-new-region (region-beginning) (region-end))
