@@ -296,7 +296,7 @@ FUNC is the llm-function-call object."
 Create org buffer with timestamped filename and set it up for AI chat."
   (interactive)
   (let* ((dir ai-org-chat-dir)
-         (file (format-time-string "gpt-%Y%m%dT%H%M%S.org"))
+         (file (format-time-string "%Y%m%dT%H%M%S--ai-chat.org"))
          (path (expand-file-name file dir)))
     (unless (file-directory-p dir)
       (make-directory dir t))
