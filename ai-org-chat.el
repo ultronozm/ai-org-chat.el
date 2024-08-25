@@ -691,6 +691,222 @@ source buffer and the duplicated tab."
                                (string-trim-right code))
                        t t)))))
 
+(defun ai-org-chat--buffer-with-line-numbers (buffer)
+  "Return a string of BUFFER's content with line numbers prepended."
+  (with-current-buffer buffer
+    (let ((line-number 1)
+          (result ""))
+      (save-excursion
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((line-content (buffer-substring-no-properties
+                               (line-beginning-position)
+                               (line-end-position))))
+            (setq result (concat result
+                                 (format "line %d: %s\n" line-number line-content)))
+            (setq line-number (1+ line-number))
+            (forward-line 1))))
+      result)))
+
+(defcustom ai-org-chat-auxiliary-provider nil
+  "The LLM provider to use for auxiliary processing in AI chat.
+This should be an instance of an LLM provider created using the `llm'
+package (e.g., via `make-llm-openai')."
+  :type 'symbol
+  :group 'ai-org-chat)
+
+(cl-defstruct ai-org-chat-buffer-change
+  type buffer start end replacement)
+
+(cl-defstruct ai-org-chat-file-creation
+  filename content)
+
+(defvar ai-org-chat--replace-lines-function
+  (make-llm-function-call
+   :function (lambda (buffer start end replacement)
+               (make-ai-org-chat-buffer-change
+                :type 'replace-lines
+                :buffer buffer
+                :start start
+                :end end
+                :replacement replacement))
+   :name "replace_lines"
+   :description "Replace lines START, START + 1, ..., END - 1 in BUFFER with REPLACEMENT."
+   :args (list (make-llm-function-arg
+                :name "buffer"
+                :description "The name of the buffer to modify."
+                :type 'string
+                :required t)
+               (make-llm-function-arg
+                :name "start"
+                :description "The starting line number (inclusive) for region to replace."
+                :type 'integer
+                :required t)
+               (make-llm-function-arg
+                :name "end"
+                :description "The ending line number (exclusive) after region to replace."
+                :type 'integer
+                :required t)
+               (make-llm-function-arg
+                :name "replacement"
+                :description "The text to insert in place of the replaced lines."
+                :type 'string
+                :required t))))
+
+(defvar ai-org-chat--create-file-function
+  (make-llm-function-call
+   :function (lambda (filename content)
+               (make-ai-org-chat-file-creation
+                :filename filename
+                :content content))
+   :name "create_file"
+   :description "Describe the creation of a new file with content."
+   :args (list (make-llm-function-arg
+                :name "filename"
+                :description "The name of the file to create."
+                :type 'string
+                :required t)
+               (make-llm-function-arg
+                :name "content"
+                :description "The content to write to the new file."
+                :type 'string
+                :required t))))
+
+(defun ai-org-chat--generate-auxiliary-llm-prompt (direction buffers)
+  "Generate a prompt for the auxiliary LLM based on DIRECTION and BUFFERS."
+  (let* ((context (mapconcat
+                   (lambda (buf)
+                     (format "Buffer: %s\nContents (with line numbers prepended):\n%s"
+                             (buffer-name buf)
+                             (ai-org-chat--buffer-with-line-numbers buf)))
+                   buffers
+                   "\n\n"))
+         (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions.  Use the provided function calls, namely, replace_lines to describe buffer changes and create_file to create new files."))
+    (llm-make-chat-prompt
+     direction
+     :context (concat system-message "\n\n" context)
+     :functions (list ai-org-chat--replace-lines-function
+                      ai-org-chat--create-file-function))))
+
+(defun ai-org-chat--parse-llm-response (response)
+  "Parse the LLM RESPONSE and return a list of change objects."
+  (if (stringp response)
+      (progn (message "String response from LLM: %s" response)
+             nil)
+    (cl-loop for (func-name . result) in response
+             when result
+             collect (pcase func-name
+                       ("replace_lines"
+                        (unless (ai-org-chat-buffer-change-p result)
+                          (error "Invalid result for replace_lines: %S" result))
+                        result)
+                       ("create_file"
+                        (unless (ai-org-chat-file-creation-p result)
+                          (error "Invalid result for create_file: %S" result))
+                        result)
+                       (_ (error "Unknown function call: %S" func-name))))))
+
+(defun ai-org-chat--apply-changes (changes)
+  "Apply the list of CHANGES to buffers and create new files."
+  (dolist (change changes)
+    (cond
+     ((ai-org-chat-buffer-change-p change)
+      (let ((buffer (get-buffer (ai-org-chat-buffer-change-buffer change))))
+        (if buffer
+            (with-current-buffer buffer
+              (let ((start (ai-org-chat-buffer-change-start change))
+                    (end (ai-org-chat-buffer-change-end change))
+                    (replacement (ai-org-chat-buffer-change-replacement change)))
+                (with-current-buffer (get-buffer-create "*apply-debug*")
+                  (save-excursion
+                    (goto-char (point-max))
+                    (insert (format "Buffer: %s\nStart: %d\nEnd: %d\nReplacement: %s\n"
+                                    (buffer-name buffer)
+                                    start
+                                    end
+                                    replacement))))
+                (save-excursion
+                  (goto-char (point-min))
+                  (forward-line (1- start))
+                  (let ((beg (point)))
+                    (forward-line (- end start))
+                    (delete-region beg (point))
+                    (insert (if (and (not (string-empty-p replacement))
+                                     (not (string-suffix-p "\n" replacement)))
+                                (concat replacement "\n")
+                              replacement))))))
+          (message "Buffer not found: %s" (ai-org-chat-buffer-change-buffer change)))))
+     ((ai-org-chat-file-creation-p change)
+      (with-temp-file (ai-org-chat-file-creation-filename change)
+        (insert (ai-org-chat-file-creation-content change))))
+     (t (error "Unknown change type: %S" change)))))
+
+(defun ai-org-chat-process-directions (direction buffers)
+  "Process DIRECTION for BUFFERS using the auxiliary LLM."
+  (let* ((prompt (ai-org-chat--generate-auxiliary-llm-prompt direction buffers))
+         (response (llm-chat ai-org-chat-auxiliary-provider prompt))
+         (changes (ai-org-chat--parse-llm-response response)))
+    (if changes
+        (progn
+          (ai-org-chat--apply-changes (nreverse changes))
+          (message "Applied %d change(s) to buffers and/or files" (length changes)))
+      (message "No changes to apply"))))
+
+(defun ai-org-chat--get-context-buffers ()
+  "Get list of buffers specified in CONTEXT properties."
+  (let ((buffer-names (ai-org-chat--get-permanent-context-items)))
+    (cl-remove-if-not #'identity
+                      (mapcar (lambda (name)
+                                (or (get-buffer name)
+                                    (find-buffer-visiting name)))
+                              buffer-names))))
+
+(defun ai-org-chat-modify-buffers ()
+  "Modify buffers using an auxiliary LLM.
+Directions for doing so comes from current subtree's content.  This
+function should be called in an org buffer with `ai-org-chat-minor-mode'
+activated."
+  (interactive)
+  (unless ai-org-chat-minor-mode
+    (user-error "This function requires ai-org-chat-minor-mode to be active"))
+  (let ((direction
+         (concat
+          "Here are the instructions for you to follow:\n\n"
+          (ai-org-chat--current-body)))
+        (buffers (ai-org-chat--get-context-buffers)))
+    (if buffers
+        (ai-org-chat-process-directions direction buffers)
+      (user-error "No context buffers found.  Add CONTEXT properties to specify buffers"))))
+
+(defun test (msg)
+  "Interactively, read a string from the minibuffer and print it as a message."
+  (interactive "sMessage: ")
+  (message "Message: %s" msg))
+
+(defun ai-org-chat-modification-tester (directions)
+  "Apply DIRECTIONS to current buffer.
+Interactively, read DIRECTIONS from minibuffer.
+Apply these to the current buffer, using the auxiliary LLM."
+  (interactive "sDirections: ")
+  (let ((buffers (list (current-buffer))))
+    (ai-org-chat-process-directions
+     (concat
+      "Here are the instructions for you to follow.\n\n"
+      directions)
+     buffers)))
+
+(setq ai-org-chat-auxiliary-provider
+      (make-llm-openai
+       :key (exec-path-from-shell-getenv "OPENAI_KEY")
+       :chat-model
+       ;; "gpt-4o"
+       "gpt-4o-2024-08-06"
+       ))
+
+(setq ai-org-chat-auxiliary-provider
+      (make-llm-gemini
+       :key (exec-path-from-shell-getenv "GEMINI_KEY")
+       :chat-model "gemini-1.5-pro-latest"))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
