@@ -459,29 +459,54 @@ Uses current and ancestor nodes."
      "\n")))
 
 (defun ai-org-chat--get-permanent-context-content ()
-  "Get content of permanent context buffers and files."
+  "Get content of permanent context buffers, files, and functions."
   (let ((permanent-items (ai-org-chat--get-permanent-context-items)))
     (mapconcat
      (lambda (item)
        (cond
+        ;; Check for existing buffer
         ((get-buffer item)
          (with-current-buffer (get-buffer item)
            (format "%s\n%s\n" item
                    (ai-org-chat--enclose-in-src-block
                     (buffer-substring-no-properties (point-min) (point-max))
                     major-mode))))
+        ;; Check for file (absolute path or relative to current directory)
         ((file-exists-p item)
-         (let* ((mode (ai-org-chat--get-mode-for-file item))
-                (content (with-temp-buffer
-                           (insert-file-contents item)
-                           (buffer-string))))
-           (format "%s\n%s\n" item
-                   (ai-org-chat--enclose-in-src-block content mode))))
+         (ai-org-chat--get-file-content item))
+        ;; Check for file in project
+        ((and (project-current)
+              (let ((file (ai-org-chat--find-file-in-project item)))
+                (when file
+                  (ai-org-chat--get-file-content file)))))
+        ;; Check for Elisp function
+        ((functionp (intern-soft item))
+         (format "%s\n%s\n" item (funcall (intern-soft item))))
         (t
-         (warn "Item %s not found as buffer or file" item)
+         (warn "Item %s not found as buffer, file, or function" item)
          nil)))
      permanent-items
      "\n")))
+
+(defun ai-org-chat--find-file-in-project (filename)
+  "Find FILENAME in the current project.
+Returns the full path if found, nil otherwise."
+  (when-let* ((project (project-current))
+              (root (project-root project))
+              (files (project-files project)))
+    (seq-find (lambda (file)
+                (string= (file-name-nondirectory file) filename))
+              files)))
+
+
+(defun ai-org-chat--get-file-content (file)
+  "Get content of FILE, enclosed in appropriate src block."
+  (let* ((mode (ai-org-chat--get-mode-for-file file))
+         (content (with-temp-buffer
+                    (insert-file-contents file)
+                    (buffer-string))))
+    (format "%s\n%s\n" file
+            (ai-org-chat--enclose-in-src-block content mode))))
 
 (defun ai-org-chat--get-mode-for-file (filename)
   "Determine the major mode that would be used for FILENAME."
