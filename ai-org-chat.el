@@ -640,18 +640,115 @@ ones."
       (insert (concat ai-org-chat-user-name))
       (insert "\n"))))
 
+
+(defun ai-org-chat-convert-markdown-blocks-to-org ()
+  "Convert Markdown style code blocks in current buffer to org."
+  (interactive)
+  (save-excursion
+    (while (re-search-forward
+            "```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)```" nil t)
+      (let ((lang (match-string 1))
+            (code (match-string 3)))
+        (replace-match (format "#+begin_src %s\n%s\n#+end_src"
+                               (or lang "")
+                               (string-trim-right code))
+                       t t)))))
+
+;;; Comparison
+
 (declare-function ediff-cleanup-mess "ediff")
 (declare-function ace-window "ace-window")
 
-;;;###autoload
-(defun ai-org-chat-compare ()
-  "Compare a source block with a selected window using ediff.
-This function duplicates the current tab, opens the source block at
-point in a separate buffer, prompts the user to select a window, and
-then runs ediff to compare the source block buffer with the selected
-window's buffer.  When ediff is finished, it automatically closes the
-source buffer and the duplicated tab."
-  (interactive)
+(defun ai-org-chat--analyze-definition ()
+  "Analyze the current buffer for a single Emacs Lisp definition.
+Return a cons cell (SIGNATURE . END-POINT) if found, nil otherwise.
+Assumes point is at (point-min)."
+  (let ((def-keywords '("defun" "cl-defun" "defmacro" "cl-defmacro" "defsubst"
+                        "cl-defsubst" "defvar" "defcustom" "defconst" "defface"
+                        "defgroup"))
+        (case-fold-search nil))
+    (when (looking-at (concat "^\\s-*(\\(" (regexp-opt def-keywords) "\\)\\_>"))
+      (save-excursion
+        (let ((def-start (point)))
+          (forward-sexp)
+          (when (>= (point) (1- (point-max)))
+            (goto-char def-start)
+            (when (re-search-forward
+                   (concat "(" (regexp-opt def-keywords)
+                           "\\s-+\\(\\(?:\\sw\\|\\s_\\)+\\)") nil t)
+              (cons (match-string-no-properties 0)
+                    (save-excursion (forward-sexp) (point))))))))))
+
+(defun ai-org-chat--find-matching-buffer (signature original-buffer)
+  "Find a buffer containing a definition matching SIGNATURE.
+Exclude ORIGINAL-BUFFER from the search.  Return a list (BUFFER START
+END) if found, nil otherwise."
+  (cl-loop for buf in (mapcar #'window-buffer (window-list))
+           when (and (not (eq buf original-buffer))
+                     (with-current-buffer buf
+                       (save-excursion
+                         (goto-char (point-min))
+                         (re-search-forward
+                          (concat "^\\s-*" (regexp-quote signature)) nil t))))
+           return (list buf (match-beginning 0)
+                        (with-current-buffer buf
+                          (save-excursion
+                            (goto-char (match-beginning 0))
+                            (end-of-defun)
+                            (point))))))
+
+(defun ai-org-chat--compare-definitions (src-buf matching-info)
+  "Compare definitions in SRC-BUF and buffer specified in MATCHING-INFO.
+MATCHING-INFO is a list (BUFFER START END) specifying the matching
+buffer and the start and end points of the matching definition."
+  (tab-duplicate)
+  (let* ((matching-buffer (nth 0 matching-info))
+         (start (nth 1 matching-info))
+         (end (nth 2 matching-info))
+         (original-narrowing-start
+          (with-current-buffer matching-buffer
+            (when (buffer-narrowed-p)
+              (marker-position (point-min-marker)))))
+         (original-narrowing-end
+          (with-current-buffer matching-buffer
+            (when (buffer-narrowed-p)
+              (marker-position (point-max-marker))))))
+    (with-current-buffer matching-buffer
+      (narrow-to-region start end))
+    (let ((ediff-buf (ediff-buffers matching-buffer src-buf)))
+      (with-current-buffer ediff-buf
+        (add-hook 'ediff-quit-hook
+                  (lambda ()
+                    (when (and (buffer-live-p matching-buffer)
+                               original-narrowing-start
+                               original-narrowing-end)
+                      (with-current-buffer matching-buffer
+                        (widen)
+                        (narrow-to-region original-narrowing-start
+                                          original-narrowing-end)))
+                    (when (buffer-live-p src-buf)
+                      (with-current-buffer src-buf
+                        (org-edit-src-exit)))
+                    (ediff-cleanup-mess)
+                    (tab-bar-close-tab))
+                  nil t)))))
+
+(defun ai-org-chat--compare-elisp-definition ()
+  "Compare elisp definition in source block with other visible buffers."
+  (let ((org-src-window-setup 'current-window))
+    (org-edit-special)
+    (let ((src-buf (current-buffer)))
+      (goto-char (point-min))
+      (if-let* ((def-info (ai-org-chat--analyze-definition))
+                (matching-info (ai-org-chat--find-matching-buffer
+                                (car def-info) src-buf)))
+          (ai-org-chat--compare-definitions src-buf matching-info)
+        (org-edit-src-exit)
+        nil))))
+
+(defun ai-org-chat--compare-fallback ()
+  "Fallback comparison method for when not comparing single Emacs Lisp defuns.
+CONTENTS is the text to be compared."
   (require 'ace-window)
   (let ((org-src-window-setup 'current-window))
     (tab-duplicate)
@@ -678,18 +775,25 @@ source buffer and the duplicated tab."
        (tab-bar-close-tab)
        (signal (car err) (cdr err))))))
 
-(defun ai-org-chat-convert-markdown-blocks-to-org ()
-  "Convert Markdown style code blocks in current buffer to org."
+;;;###autoload
+(defun ai-org-chat-compare ()
+  "Compare a source block with a selected window using ediff.
+If the source block is a single Emacs Lisp defun, it tries to find a matching
+defun in other visible buffers and compares them directly."
   (interactive)
-  (save-excursion
-    (while (re-search-forward
-            "```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)```" nil t)
-      (let ((lang (match-string 1))
-            (code (match-string 3)))
-        (replace-match (format "#+begin_src %s\n%s\n#+end_src"
-                               (or lang "")
-                               (string-trim-right code))
-                       t t)))))
+  (require 'ace-window)
+  (let ((org-src-window-setup 'current-window))
+    (save-excursion
+      (let* ((element (org-element-at-point))
+             (type (org-element-type element))
+             (language (org-element-property :language element)))
+        (or (and (eq type 'src-block)
+                 language
+                 (member language '("emacs-lisp" "elisp"))
+                 (ai-org-chat--compare-elisp-definition))
+            (ai-org-chat--compare-fallback))))))
+
+;;; Apply changes
 
 (defun ai-org-chat--buffer-with-line-numbers (buffer)
   "Return a string of BUFFER's content with line numbers prepended."
@@ -716,44 +820,34 @@ package (e.g., via `make-llm-openai')."
   :group 'ai-org-chat)
 
 (cl-defstruct ai-org-chat-buffer-change
-  type buffer start end replacement)
+  type buffer diff)
 
 (cl-defstruct ai-org-chat-file-creation
   filename content)
 
-(defvar ai-org-chat--replace-lines-function
+(defun ai-org-chat--generate-diff-function ()
+  "Blah"
   (make-llm-function-call
-   :function (lambda (buffer start end replacement)
+   :function (lambda (buffer diff)
                (make-ai-org-chat-buffer-change
-                :type 'replace-lines
+                :type 'apply-diff
                 :buffer buffer
-                :start start
-                :end end
-                :replacement replacement))
-   :name "replace_lines"
-   :description "Replace lines START, START + 1, ..., END - 1 in BUFFER with REPLACEMENT."
+                :diff diff))
+   :name "generate_diff"
+   :description "Generate a universal diff for changes to be applied to the buffer."
    :args (list (make-llm-function-arg
                 :name "buffer"
                 :description "The name of the buffer to modify."
                 :type 'string
                 :required t)
                (make-llm-function-arg
-                :name "start"
-                :description "The starting line number (inclusive) for region to replace."
-                :type 'integer
-                :required t)
-               (make-llm-function-arg
-                :name "end"
-                :description "The ending line number (exclusive) after region to replace."
-                :type 'integer
-                :required t)
-               (make-llm-function-arg
-                :name "replacement"
-                :description "The text to insert in place of the replaced lines."
+                :name "diff"
+                :description "The universal diff describing the changes to be applied."
                 :type 'string
                 :required t))))
 
-(defvar ai-org-chat--create-file-function
+(defun ai-org-chat--create-file-function ()
+  "Blah"
   (make-llm-function-call
    :function (lambda (filename content)
                (make-ai-org-chat-file-creation
@@ -776,17 +870,18 @@ package (e.g., via `make-llm-openai')."
   "Generate a prompt for the auxiliary LLM based on DIRECTION and BUFFERS."
   (let* ((context (mapconcat
                    (lambda (buf)
-                     (format "Buffer: %s\nContents (with line numbers prepended):\n%s"
+                     (format "Buffer: %s\nContents:\n%s"
                              (buffer-name buf)
-                             (ai-org-chat--buffer-with-line-numbers buf)))
+                             (with-current-buffer buf
+                               (buffer-substring-no-properties (point-min) (point-max)))))
                    buffers
                    "\n\n"))
-         (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions.  Use the provided function calls, namely, replace_lines to describe buffer changes and create_file to create new files."))
+         (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions. Use the provided function calls, namely, generate_diff to describe buffer changes using universal diff format and create_file to create new files."))
     (llm-make-chat-prompt
      direction
      :context (concat system-message "\n\n" context)
-     :functions (list ai-org-chat--replace-lines-function
-                      ai-org-chat--create-file-function))))
+     :functions (list (ai-org-chat--generate-diff-function)
+                      (ai-org-chat--create-file-function)))))
 
 (defun ai-org-chat--parse-llm-response (response)
   "Parse the LLM RESPONSE and return a list of change objects."
@@ -796,9 +891,9 @@ package (e.g., via `make-llm-openai')."
     (cl-loop for (func-name . result) in response
              when result
              collect (pcase func-name
-                       ("replace_lines"
+                       ("generate_diff"
                         (unless (ai-org-chat-buffer-change-p result)
-                          (error "Invalid result for replace_lines: %S" result))
+                          (error "Invalid result for generate_diff: %S" result))
                         result)
                        ("create_file"
                         (unless (ai-org-chat-file-creation-p result)
@@ -814,27 +909,10 @@ package (e.g., via `make-llm-openai')."
       (let ((buffer (get-buffer (ai-org-chat-buffer-change-buffer change))))
         (if buffer
             (with-current-buffer buffer
-              (let ((start (ai-org-chat-buffer-change-start change))
-                    (end (ai-org-chat-buffer-change-end change))
-                    (replacement (ai-org-chat-buffer-change-replacement change)))
-                (with-current-buffer (get-buffer-create "*apply-debug*")
-                  (save-excursion
-                    (goto-char (point-max))
-                    (insert (format "Buffer: %s\nStart: %d\nEnd: %d\nReplacement: %s\n"
-                                    (buffer-name buffer)
-                                    start
-                                    end
-                                    replacement))))
-                (save-excursion
-                  (goto-char (point-min))
-                  (forward-line (1- start))
-                  (let ((beg (point)))
-                    (forward-line (- end start))
-                    (delete-region beg (point))
-                    (insert (if (and (not (string-empty-p replacement))
-                                     (not (string-suffix-p "\n" replacement)))
-                                (concat replacement "\n")
-                              replacement))))))
+              (let ((diff (ai-org-chat-buffer-change-diff change)))
+                (with-temp-buffer
+                  (insert diff)
+                  (diff-apply-hunk (current-buffer) buffer))))
           (message "Buffer not found: %s" (ai-org-chat-buffer-change-buffer change)))))
      ((ai-org-chat-file-creation-p change)
       (with-temp-file (ai-org-chat-file-creation-filename change)
@@ -848,7 +926,7 @@ package (e.g., via `make-llm-openai')."
          (changes (ai-org-chat--parse-llm-response response)))
     (if changes
         (progn
-          (ai-org-chat--apply-changes (nreverse changes))
+          (ai-org-chat--apply-changes changes)
           (message "Applied %d change(s) to buffers and/or files" (length changes)))
       (message "No changes to apply"))))
 
