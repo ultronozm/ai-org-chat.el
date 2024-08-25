@@ -12,15 +12,15 @@ The design is inspired by the ChatGPT web interface.  There are [[https://www.re
 
 The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
 
-The "plumbing" concerning API calls is outsourced by default to the [[https://github.com/karthink/gptel][gptel]] library, which requires the user to provide an OpenAI API key.  By customizing the variable =ai-org-chat-request-fn=, any other backend could be used.
-
 [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Narrowing.html][Narrowing]] provides a simple way to truncate the conversation history if it becomes too long -- only the restricted part of the buffer is considered.
 
-(TODO: document these next features better.)
+The PROPERTIES drawers are used to provide
+- context, which augments the system message with the contents of certain buffers or files, and
+- tools, which allow the AI to operate directly on the environment.
 
-A "system message" (at least for OpenAI/Anthropic models; I haven't checked more generally) can be specified via the customization variable =ai-org-chat-system-message=.  "Context" can be passed along with the system message to share the contents of files or Emacs buffers with the AI (see [[Context]]).
+There is support for quickly launching Ediff sessions that compare modifications suggested by the AI to their sources, making it easier to review and apply changes (see [[Compare Feature]]).
 
-There is some support for quickly launching Ediff sessions that compare modifications suggested by the AI to their sources (see [[Usage]]).
+The "plumbing" concerning API calls is outsourced to either the [[https://github.com/karthink/gptel][gptel]] or [[https://github.com/ahyatt/llm][llm]] library, which require the user to provide an API key.  By customizing the variable =ai-org-chat-request-fn=, any other backend library could be used.
 
 * Configuration
 This package depends (by default) upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
@@ -48,11 +48,7 @@ Next, download this repository, install using =M-x package-install-file= (or pac
   (:map ai-org-chat-minor-mode-map
         ("C-c <return>" . ai-org-chat-respond)
         ("C-c n" . ai-org-chat-branch)
-        ("C-c e" . ai-org-chat-compare)
-        ("C-c x" . ai-org-chat-set-context-style)
-        ("C-c a b" . ai-org-chat-add-buffer-context)
-        ("C-c a f" . ai-org-chat-add-file-context)
-        ("C-c a p" . ai-org-chat-add-project-files-context))
+        ("C-c e" . ai-org-chat-compare))
   :commands (ai-org-chat-setup-buffer)
   :custom
   (ai-org-chat-user-name "Paul")
@@ -69,25 +65,83 @@ When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if 
 
 The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose is to support user-defined keybindings like in the above =use-package= declaration.  If you want to work in some other org file, you can either activate this minor mode manually or do =M-x ai-org-chat-setup-buffer=.
 
-There are a few useful commands:
+We provide the following commands:
 
 - =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
-- =ai-org-chat-compare= (=C-c e=) :: This launches an Ediff session, in a temporary tab, comparing the org-mode block at point with the contents of some other visible buffer (selected via ace-window in case there are multiple other buffers).  This is useful for studying and implementing changes suggested by the AI.
-- =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks in the buffer to org-mode code blocks.
+- =ai-org-chat-compare= (=C-c e=) :: This launches an Ediff session, comparing the org-mode block at point (typically containing AI-suggested code) with the contents of another visible buffer. This feature is critical for efficiently reviewing and applying AI-suggested changes to your codebase. See [[Compare Feature]] for more details.
+- =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks between (point) and (point-max) to org-mode code blocks.
 
-There are also a few commands concerning context (see [[Context]] below).
-- =ai-org-chat-set-context-style= (=C-c c=) :: This sets =ai-org-chat-context-style= as a file local variable.
-- =ai-org-chat-add-buffer-context= (=C-c a b=) :: This adds buffers as context to the node at point.
-- =ai-org-chat-add-visible-buffers-context= :: This adds all visible buffers as context.
-- =ai-org-chat-add-buffer-context= (=C-c a f=) :: This adds files as context.
-- =ai-org-chat-add-project-context= (=C-c a p=) :: This adds the contents of a project as context.
+* Context and Tools
 
-* Context
-The buffer-local customization variable =ai-org-chat-context-style= can currently attain three values: nil, =visible-contents= and =visible-buffers=.  You can adjust its default value by tweaking the above =use-package= form.  When it is non-nil, the system message is appended with some of the contents of the visible buffers.  The contents are:
-- for =visible-contents=, the visible content of all visible buffers.
-- for =visible-buffers=, the complete content of all visible buffers.
+ai-org-chat uses PROPERTIES drawers to manage context and tools for the AI conversation. These can be set at the top level of the file or in individual nodes.
 
-This makes the chat client behave a bit like a pair-programmer, seeing what you see and responding to changes you make.  It pairs well with the =ai-org-chat-compare= feature, which
+** Context
 
-The commands =ai-org-chat-add-buffer-context= and =ai-org-chat-add-file-context= add "permanent" context, independent of which windows are visible, to the current node.  The context is specified by a list of files or buffers, contained in the :CONTEXT: property of the node.  Child nodes inherit the context of their parent nodes.  You can use a top-level property drawer to set context for an entire file.  The convenience function =ai-org-chat-add-project-context= adds all the files in a project to the context.
+Context is managed through the =CONTEXT= property. This property can contain a list of items that provide additional information to the AI. These items can be:
+
+1. Buffer names
+2. File names as absolute paths, paths relative to the current directory, or paths relative to any subdirectory of the current Emacs project, searched in this order
+3. Elisp function names (functions that return strings to be included in the context)
+
+Example:
+#+begin_example
+:PROPERTIES:
+:CONTEXT: buffer-name.txt project-file.el my-context-function
+:END:
+#+end_example
+
+The =ai-org-chat-context-style= variable determines how visible buffer contents are included in the context.  It can be set to =nil=, =visible-contents=, or =visible-buffers=.
+
+** Tools
+
+Tools are specified using the =TOOLS= property.  This property should contain a list of =llm= function symbols that the AI can use.
+
+Example:
+#+begin_example
+:PROPERTIES:
+:TOOLS: my-tool-function another-tool-function
+:END:
+#+end_example
+
+** Helper Commands
+
+While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), ai-org-chat provides some helper commands for managing context:
+
+- =ai-org-chat-set-context-style=: Set the =ai-org-chat-context-style= as a file-local variable.
+- =ai-org-chat-add-buffer-context=: Add selected buffers as context.
+- =ai-org-chat-add-visible-buffers-context=: Add all visible buffers as context.
+- =ai-org-chat-add-file-context=: Add selected files as context.
+- =ai-org-chat-add-project-files-context=: Add all files from a selected project as context.
+
+These commands are designed to simplify context/tool management, but are not required for using the package.
+#+end_src
+
+* Compare Feature
+
+The "compare" feature streamlines the process of reviewing and applying code changes suggested by the AI.
+
+** How it works
+
+When the AI suggests changes to a function or code block in your project, you can use this feature to quickly compare the suggestion with the original code, as follows.
+
+1. Narrow the buffer containing your original code to the function or section of interest.
+2. In the AI chat buffer, place your cursor on the AI-suggested code block.
+3. Execute the command =ai-org-chat-compare= (bound to =C-c e= by default).
+4. If you have multiple visible windows, you'll be prompted to select the window containing the original code using ace-window.
+5. An Ediff session will launch in a new tab, comparing the AI-suggested code with your original code.
+
+** Benefits
+
+- Side-by-side comparison: Easily see the differences between your current code and the AI's suggestion.
+- Interactive review: Use Ediff's features to navigate and understand the changes.
+- Easy application: Apply changes directly from the Ediff session if desired.
+- Temporary setup: The Ediff session is launched in a new tab and cleaned up automatically when you're done, keeping your workspace tidy.
+
+** Usage Tips
+
+- This feature works best when you narrow your original code buffer to the relevant function or section before invoking the compare command.  This ensures a focused comparison.
+- You can use Ediff's built-in commands to navigate differences, copy changes from one side to the other, or even edit the buffers directly.
+- When you're done reviewing, simply exit the Ediff session.  The temporary buffers and tab will be cleaned up automatically.
+
+By leveraging this feature, you can significantly speed up the process of reviewing and incorporating AI-suggested code changes, making your workflow with ai-org-chat more efficient and effective.
