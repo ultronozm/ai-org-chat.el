@@ -617,10 +617,16 @@ the directory of the selected project."
 ;;;###autoload
 (defun ai-org-chat-branch ()
   "Create new chat branch.
-Find the first parent AI heading, and insert a new user heading
-below that, except when there are no parent AI headings (e.g.,
-we're at (point-min)), in which case insert a new top-level user
-heading."
+
+This function creates a new branch in the AI chat conversation by
+inserting a new user heading.  It behaves as follows:
+
+- If there's a parent AI heading, insert a new user heading below it.
+- If there are no parent AI headings (e.g., we're at the beginning of the
+  buffer), insert a new top-level user heading at the end of the buffer.
+
+This allows for creating new conversation threads or continuing existing
+ones."
   (interactive)
   (let ((not-at-top t))
     (while
