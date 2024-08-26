@@ -409,11 +409,11 @@ Using the prop line, at top of file."
     (set (make-local-variable variable) value)
     (message "Set %s to %s (file-locally and buffer-locally)" variable value)))
 
-(defun ai-org-chat--buffer-contents (window point-functions)
-  "Given a WINDOW, use POINT-FUNCTIONS to extract the buffer contents.
+(defun ai-org-chat--buffer-contents (buf point-functions)
+  "Use POINT-FUNCTIONS to extract contents of buffer BUF.
 Here POINT-FUNCTIONS is a list of two functions that should return the
 beginning and end of the desired region, respectively."
-  (with-current-buffer (window-buffer window)
+  (with-current-buffer buf
     (let* ((beg
             (max
              (point-min)
@@ -461,7 +461,7 @@ Uses current and ancestor nodes."
     (mapconcat
      (lambda (window)
        (ai-org-chat--buffer-contents
-        window
+        (window-buffer window)
         (if (eq ai-org-chat-context-style 'visible-contents)
             '(window-start window-end)
           '(point-min point-max))))
@@ -697,83 +697,61 @@ END) if found, nil otherwise."
                             (end-of-defun)
                             (point))))))
 
-(defun ai-org-chat--compare-definitions (src-buf matching-info)
-  "Compare definitions in SRC-BUF and buffer specified in MATCHING-INFO.
-MATCHING-INFO is a list (BUFFER START END) specifying the matching
-buffer and the start and end points of the matching definition."
-  (tab-duplicate)
-  (let* ((matching-buffer (nth 0 matching-info))
-         (start (nth 1 matching-info))
-         (end (nth 2 matching-info))
-         (original-narrowing-start
-          (with-current-buffer matching-buffer
-            (when (buffer-narrowed-p)
-              (marker-position (point-min-marker)))))
-         (original-narrowing-end
-          (with-current-buffer matching-buffer
-            (when (buffer-narrowed-p)
-              (marker-position (point-max-marker))))))
-    (with-current-buffer matching-buffer
-      (narrow-to-region start end))
-    (let ((ediff-buf (ediff-buffers matching-buffer src-buf)))
+(defun ai-org-chat--setup-ediff (buf1 buf2 &optional narrowing-info)
+  "Set up ediff session between BUF1 and BUF2.
+Optional NARROWING-INFO is a list (START END) for narrowing BUF1."
+  (let ((original-narrowing-start
+         (with-current-buffer buf1
+           (point-min-marker)))
+        (original-narrowing-end
+         (with-current-buffer buf1
+           (point-max-marker))))
+    (set-marker-insertion-type original-narrowing-start nil)
+    (set-marker-insertion-type original-narrowing-end t)
+    (when narrowing-info
+      (with-current-buffer buf1
+        (narrow-to-region (nth 0 narrowing-info) (nth 1 narrowing-info))))
+    (let ((ediff-buf (ediff-buffers buf1 buf2)))
       (with-current-buffer ediff-buf
         (add-hook 'ediff-quit-hook
                   (lambda ()
-                    (when (and (buffer-live-p matching-buffer)
+                    (when (and (buffer-live-p buf1)
                                original-narrowing-start
                                original-narrowing-end)
-                      (with-current-buffer matching-buffer
+                      (with-current-buffer buf1
                         (widen)
                         (narrow-to-region original-narrowing-start
                                           original-narrowing-end)))
-                    (when (buffer-live-p src-buf)
-                      (with-current-buffer src-buf
+                    (when (buffer-live-p buf2)
+                      (with-current-buffer buf2
                         (org-edit-src-exit)))
                     (ediff-cleanup-mess)
                     (tab-bar-close-tab))
                   nil t)))))
 
-(defun ai-org-chat--compare-elisp-definition ()
-  "Compare elisp definition in source block with other visible buffers."
-  (let ((org-src-window-setup 'current-window))
-    (org-edit-special)
-    (let ((src-buf (current-buffer)))
-      (goto-char (point-min))
-      (if-let* ((def-info (ai-org-chat--analyze-definition))
-                (matching-info (ai-org-chat--find-matching-buffer
-                                (car def-info) src-buf)))
-          (ai-org-chat--compare-definitions src-buf matching-info)
-        (org-edit-src-exit)
-        nil))))
+(defun ai-org-chat--compare-impl (src-buf is-elisp)
+  "Implement comparison logic for SRC-BUF.
+If IS-ELISP is non-nil, attempt to match Emacs Lisp definitions."
+  (with-current-buffer src-buf
+    (goto-char (point-min))
+    (let ((comparison-set-up nil))
+      (when is-elisp
+        (when-let* ((def-info (ai-org-chat--analyze-definition))
+                    (matching-info (ai-org-chat--find-matching-buffer
+                                    (car def-info) src-buf)))
+          (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
+                                    (list (nth 1 matching-info)
+                                          (nth 2 matching-info)))
+          (setq comparison-set-up t)))
 
-(defun ai-org-chat--compare-fallback ()
-  "Fallback comparison method for when not comparing single Emacs Lisp defuns.
-CONTENTS is the text to be compared."
-  (require 'ace-window)
-  (let ((org-src-window-setup 'current-window))
-    (tab-duplicate)
-    (condition-case err
-        (progn
-          (org-edit-special)
-          (let ((buf2 (current-buffer))
-                (ai-window (selected-window)))
-            (when (> (count-windows) 2)
-              (call-interactively #'ace-window))
+      (unless comparison-set-up
+        (require 'ace-window)
+        (let ((ai-window (selected-window)))
+          (when (> (count-windows) 2)
+            (call-interactively #'ace-window))
+          (let ((buf1 (current-buffer)))
             (delete-window ai-window)
-            (let ((buf1 (current-buffer)))
-              (let ((ediff-buf (ediff-buffers buf1 buf2)))
-                (with-current-buffer ediff-buf
-                  (add-hook 'ediff-quit-hook
-                            (lambda ()
-                              (when (buffer-live-p buf2)
-                                (with-current-buffer buf2
-                                  (org-edit-src-exit)))
-                              (ediff-cleanup-mess)
-                              (tab-bar-close-tab))
-                            nil t))))))
-      (error
-       (tab-bar-close-tab)
-       (signal (car err) (cdr err))))))
+            (ai-org-chat--setup-ediff buf1 src-buf)))))))
 
 ;;;###autoload
 (defun ai-org-chat-compare ()
@@ -781,36 +759,22 @@ CONTENTS is the text to be compared."
 If the source block is a single Emacs Lisp defun, it tries to find a matching
 defun in other visible buffers and compares them directly."
   (interactive)
-  (require 'ace-window)
-  (let ((org-src-window-setup 'current-window))
-    (save-excursion
-      (let* ((element (org-element-at-point))
-             (type (org-element-type element))
-             (language (org-element-property :language element)))
-        (or (and (eq type 'src-block)
-                 language
-                 (member language '("emacs-lisp" "elisp"))
-                 (ai-org-chat--compare-elisp-definition))
-            (ai-org-chat--compare-fallback))))))
+  (let* ((element (org-element-at-point))
+         (type (org-element-type element))
+         (language (org-element-property :language element)))
+    (when (eq type 'src-block)
+      (let ((org-src-window-setup 'current-window)
+            (is-elisp (and language (member language '("emacs-lisp" "elisp")))))
+        (condition-case err
+            (progn
+              (tab-duplicate)
+              (org-edit-special)
+              (ai-org-chat--compare-impl (current-buffer) is-elisp))
+          (error
+           (tab-bar-close-tab)
+           (signal (car err) (cdr err))))))))
 
 ;;; Apply changes
-
-(defun ai-org-chat--buffer-with-line-numbers (buffer)
-  "Return a string of BUFFER's content with line numbers prepended."
-  (with-current-buffer buffer
-    (let ((line-number 1)
-          (result ""))
-      (save-excursion
-        (goto-char (point-min))
-        (while (not (eobp))
-          (let ((line-content (buffer-substring-no-properties
-                               (line-beginning-position)
-                               (line-end-position))))
-            (setq result (concat result
-                                 (format "line %d: %s\n" line-number line-content)))
-            (setq line-number (1+ line-number))
-            (forward-line 1))))
-      result)))
 
 (defcustom ai-org-chat-auxiliary-provider nil
   "The LLM provider to use for auxiliary processing in AI chat.
@@ -826,7 +790,19 @@ package (e.g., via `make-llm-openai')."
   filename content)
 
 (defun ai-org-chat--generate-diff-function ()
-  "Blah"
+  "Create an LLM function call for generating diffs.
+
+This function returns an `llm-function-call' object that represents
+a function for generating universal diffs. When called, this function
+will create an `ai-org-chat-buffer-change' struct with the provided
+buffer name and diff.
+
+The generated function has two arguments:
+- buffer: The name of the buffer to modify (string, required)
+- diff: The universal diff describing the changes to apply (string, required)
+
+This is primarily used in the context of the auxiliary LLM for
+applying changes to buffers based on natural language instructions."
   (make-llm-function-call
    :function (lambda (buffer diff)
                (make-ai-org-chat-buffer-change
@@ -847,7 +823,19 @@ package (e.g., via `make-llm-openai')."
                 :required t))))
 
 (defun ai-org-chat--create-file-function ()
-  "Blah"
+  "Create an LLM function call for file creation.
+
+This function returns an `llm-function-call' object that represents
+a function for creating new files. When called, this function will
+create an `ai-org-chat-file-creation' struct with the provided
+filename and content.
+
+The generated function has two arguments:
+- filename: The name of the file to create (string, required)
+- content: The content to write to the new file (string, required)
+
+This is primarily used in the context of the auxiliary LLM for
+creating new files based on natural language instructions."
   (make-llm-function-call
    :function (lambda (filename content)
                (make-ai-org-chat-file-creation
@@ -867,16 +855,63 @@ package (e.g., via `make-llm-openai')."
                 :required t))))
 
 (defun ai-org-chat--generate-auxiliary-llm-prompt (direction buffers)
-  "Generate a prompt for the auxiliary LLM based on DIRECTION and BUFFERS."
+  "Generate a prompt for the auxiliary LLM based on DIRECTION and BUFFERS.
+
+This function creates a comprehensive prompt for the auxiliary Language
+Model (LLM) that includes:
+1. A system message defining the LLM's role and available functions.
+2. The user-provided DIRECTION for modifications.
+3. The context, which consists of the contents of all provided BUFFERS.
+
+Arguments:
+- DIRECTION: A string containing the user's instructions for modifications.
+- BUFFERS: A list of buffer objects to be included in the context.
+
+The generated prompt is structured to guide the LLM in producing
+a list of buffer modifications and file creations based on the
+given directions, using the provided function calls (generate_diff
+and create_file)."
   (let* ((context (mapconcat
                    (lambda (buf)
                      (format "Buffer: %s\nContents:\n%s"
                              (buffer-name buf)
-                             (with-current-buffer buf
-                               (buffer-substring-no-properties (point-min) (point-max)))))
+                             (concat
+                              "```\n"
+                              (with-current-buffer buf
+                                (buffer-string))
+                              "```")))
                    buffers
                    "\n\n"))
-         (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions. Use the provided function calls, namely, generate_diff to describe buffer changes using universal diff format and create_file to create new files."))
+         ;; Don't include line numbers like `diff -U0` does.  The user's patch tool doesn't need them.
+         (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions. Use the provided function calls, namely, generate_diff to describe buffer changes using universal diff format and create_file to create new files.  Notes:
+
+For each file that needs to be changed, write out the changes similar to a unified diff like `diff -U0` would produce.
+
+Make sure you include the first 2 lines with the file paths.
+Don't include timestamps with the file paths.
+
+Start each hunk of changes with a `@@ ... @@` line.
+
+The user's patch tool needs CORRECT patches that apply cleanly against the current contents of the file!
+Think carefully and make sure you include and mark all lines that need to be removed or changed as `-` lines.
+Make sure you mark all new or modified lines with `+`.
+Don't leave out any lines or the diff patch won't apply correctly.
+
+Indentation matters in the diffs!
+
+Start a new hunk for each section of the file that needs changes.
+
+Only output hunks that specify changes with `+` or `-` lines.
+Skip any hunks that are entirely unchanging ` ` lines.
+
+Output hunks in whatever order makes the most sense.
+Hunks don't need to be in any particular order.
+
+When editing a function, method, loop, etc use a hunk to replace the *entire* code block.
+Delete the entire existing version with `-` lines and then add a new, updated version with `+` lines.
+This will help you generate correct code and correct diffs.
+
+To move code within a file, use 2 hunks: 1 to delete it from its current location, 1 to insert it in the new location."))
     (llm-make-chat-prompt
      direction
      :context (concat system-message "\n\n" context)
@@ -901,6 +936,8 @@ package (e.g., via `make-llm-openai')."
                         result)
                        (_ (error "Unknown function call: %S" func-name))))))
 
+(defvar ai-org-chat--actually-apply nil)
+
 (defun ai-org-chat--apply-changes (changes)
   "Apply the list of CHANGES to buffers and create new files."
   (dolist (change changes)
@@ -909,10 +946,26 @@ package (e.g., via `make-llm-openai')."
       (let ((buffer (get-buffer (ai-org-chat-buffer-change-buffer change))))
         (if buffer
             (with-current-buffer buffer
-              (let ((diff (ai-org-chat-buffer-change-diff change)))
-                (with-temp-buffer
-                  (insert diff)
-                  (diff-apply-hunk (current-buffer) buffer))))
+              (let* ((diff (ai-org-chat-buffer-change-diff change))
+                     (temp-diff-buffer (generate-new-buffer "*temp-diff*")))
+                (unwind-protect
+                    (progn
+                      (with-current-buffer temp-diff-buffer
+                        (insert diff)
+                        (setq-local default-directory
+                                    (or (file-name-directory
+                                         (buffer-file-name buffer))
+                                        default-directory))
+                        (diff-mode)
+                        (goto-char (point-min)))
+                      (if ai-org-chat--actually-apply
+                          (save-window-excursion
+                            (with-current-buffer temp-diff-buffer
+                              (while (re-search-forward diff-hunk-header-re nil t)
+                                (diff-apply-hunk))))
+                        (display-buffer temp-diff-buffer)))
+                  ;; (kill-buffer temp-diff-buffer)
+                  )))
           (message "Buffer not found: %s" (ai-org-chat-buffer-change-buffer change)))))
      ((ai-org-chat-file-creation-p change)
       (with-temp-file (ai-org-chat-file-creation-filename change)
@@ -956,15 +1009,24 @@ activated."
         (ai-org-chat-process-directions direction buffers)
       (user-error "No context buffers found.  Add CONTEXT properties to specify buffers"))))
 
-(defun test (msg)
-  "Interactively, read a string from the minibuffer and print it as a message."
-  (interactive "sMessage: ")
-  (message "Message: %s" msg))
-
 (defun ai-org-chat-modification-tester (directions)
-  "Apply DIRECTIONS to current buffer.
-Interactively, read DIRECTIONS from minibuffer.
-Apply these to the current buffer, using the auxiliary LLM."
+  "Test buffer modifications by applying DIRECTIONS to the current buffer.
+
+This function serves as a convenient way to test the auxiliary LLM's
+ability to interpret and apply modifications to a buffer. It takes
+a string of DIRECTIONS as input and applies them to the current buffer
+using the auxiliary LLM.
+
+When called interactively, it prompts the user for directions in the
+minibuffer. This is useful for quick experiments or debugging the
+buffer modification process.
+
+Arguments:
+- DIRECTIONS: A string containing instructions for modifying the buffer.
+
+The function wraps the DIRECTIONS in a standard format before passing
+them to the auxiliary LLM, ensuring consistency with other parts of
+the ai-org-chat system."
   (interactive "sDirections: ")
   (let ((buffers (list (current-buffer))))
     (ai-org-chat-process-directions
@@ -972,6 +1034,11 @@ Apply these to the current buffer, using the auxiliary LLM."
       "Here are the instructions for you to follow.\n\n"
       directions)
      buffers)))
+
+(setq ai-org-chat-auxiliary-provider
+      (make-llm-gemini
+       :key (exec-path-from-shell-getenv "GEMINI_KEY")
+       :chat-model "gemini-1.5-pro-latest"))
 
 (setq ai-org-chat-auxiliary-provider
       (make-llm-openai
@@ -982,9 +1049,10 @@ Apply these to the current buffer, using the auxiliary LLM."
        ))
 
 (setq ai-org-chat-auxiliary-provider
-      (make-llm-gemini
-       :key (exec-path-from-shell-getenv "GEMINI_KEY")
-       :chat-model "gemini-1.5-pro-latest"))
+      (make-llm-claude
+       :key (exec-path-from-shell-getenv "ANTHROPIC_KEY")
+       :chat-model "claude-3-5-sonnet-20240620"))
+
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
