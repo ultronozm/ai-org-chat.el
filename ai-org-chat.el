@@ -722,6 +722,7 @@ Returns a list (BUFFER START END) if a match is found, where:
   END is the ending position of the matched definition
 Returns nil if no match is found."
   (with-current-buffer buffer
+    (imenu-flush-cache)
     (let ((index-alist (flatten-imenu-index (imenu--make-index-alist))))
       (cl-loop for item in index-alist
                when (and (equal (car item) (car signature))
