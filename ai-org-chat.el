@@ -1154,17 +1154,25 @@ the ai-org-chat system."
        :chat-model "gemini-1.5-pro-latest"))
 
 (setq ai-org-chat-auxiliary-provider
+      (make-llm-claude
+       :key (exec-path-from-shell-getenv "ANTHROPIC_KEY")
+       :chat-model "claude-3-5-sonnet-20240620"))
+
+(setq ai-org-chat-auxiliary-provider
+      (make-llm-openai
+       :key (exec-path-from-shell-getenv "OPENAI_KEY")
+       :chat-model
+       ;; "gpt-4o"
+       "gpt-4o-mini"
+       ))
+
+(setq ai-org-chat-auxiliary-provider
       (make-llm-openai
        :key (exec-path-from-shell-getenv "OPENAI_KEY")
        :chat-model
        ;; "gpt-4o"
        "gpt-4o-2024-08-06"
        ))
-
-(setq ai-org-chat-auxiliary-provider
-      (make-llm-claude
-       :key (exec-path-from-shell-getenv "ANTHROPIC_KEY")
-       :chat-model "claude-3-5-sonnet-20240620"))
 
 
 (provide 'ai-org-chat)
