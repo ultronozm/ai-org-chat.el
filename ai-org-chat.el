@@ -161,25 +161,7 @@ have no effect."
      ((listp response)
       (message "Response is a list: %s" response)))))
 
-(defun ai-org-chat--handle-final-response (prompt response start end remaining-depth provider)
-  "Handle the final RESPONSE from the LLM.
-PROMPT is the original prompt used for the query.
-START and END are markers for insertion.
-REMAINING-DEPTH determines how many more recursive calls are allowed.
-PROVIDER is the LLM service provider."
-  (cond
-   ((stringp response)
-    (ai-org-chat--insert-text start end response))
-   ((and (listp response) (> remaining-depth 0))
-    (ai-org-chat-call-with-functions
-     provider prompt (marker-buffer end) (marker-position end) (1- remaining-depth)))
-   (t
-    (with-current-buffer (marker-buffer end)
-      (save-excursion
-        (goto-char end)
-        (insert "\nMaximum recursive depth reached or unknown response type"))))))
-
-(defun ai-org-chat-call-with-functions (provider prompt buffer point remaining-depth)
+(defun ai-org-chat--call-with-functions (provider prompt buffer point remaining-depth)
   "Call the LLM, optionally streaming output to buffer.
 PROVIDER supplies the LLM service.  PROMPT is the input for the LLM.
 BUFFER and POINT specify where to insert the response.
@@ -204,6 +186,24 @@ REMAINING-DEPTH determines how many more recursive calls are allowed."
     (if ai-org-chat-streaming-p
         (llm-chat-streaming provider prompt partial-cb final-cb error-cb)
       (llm-chat-async provider prompt final-cb error-cb))))
+
+(defun ai-org-chat--handle-final-response (prompt response start end remaining-depth provider)
+  "Handle the final RESPONSE from the LLM.
+PROMPT is the original prompt used for the query.
+START and END are markers for insertion.
+REMAINING-DEPTH determines how many more recursive calls are allowed.
+PROVIDER is the LLM service provider."
+  (cond
+   ((stringp response)
+    (ai-org-chat--insert-text start end response))
+   ((and (listp response) (> remaining-depth 0))
+    (ai-org-chat--call-with-functions
+     provider prompt (marker-buffer end) (marker-position end) (1- remaining-depth)))
+   (t
+    (with-current-buffer (marker-buffer end)
+      (save-excursion
+        (goto-char end)
+        (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
 (defun ai-org-chat--insert-function-call (func args)
   "Insert FUNC call with ARGS into the current org buffer."
@@ -282,7 +282,7 @@ FUNC is the llm-function-call object."
                   messages
                   :context system-context
                   :functions tools)))
-    (ai-org-chat-call-with-functions
+    (ai-org-chat--call-with-functions
      ai-org-chat-provider
      prompt
      (marker-buffer point)
