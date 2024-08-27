@@ -257,7 +257,7 @@ FUNC is the llm-function-call object."
   (insert heading)
   (org-demote-subtree))
 
-(defvar ai-org-chat-max-recursion-depth 3
+(defvar ai-org-chat-max-recursion-depth 10
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
 (defun ai-org-chat-respond ()
