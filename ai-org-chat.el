@@ -989,8 +989,12 @@ This will help you generate correct code and correct diffs.
 
 To move code within a file, use 2 hunks: 1 to delete it from its current location, 1 to insert it in the new location."))
     (llm-make-chat-prompt
-     direction
-     :context (concat system-message "\n\n" context)
+     (concat
+      "=== Here are the INSTRUCTIONS for you to follow: ===\n\n"
+      direction "\n\n"
+      "=== Here are the ORIGINAL FILES for you to modify: ===\n\n"
+      context)
+     :context (concat system-message)
      :functions (list (ai-org-chat--llm-make-buffer-change)
                       (ai-org-chat--llm-make-file-creation)))))
 
@@ -1105,10 +1109,7 @@ activated."
   (interactive)
   (unless ai-org-chat-minor-mode
     (user-error "This function requires ai-org-chat-minor-mode to be active"))
-  (let ((direction
-         (concat
-          "Here are the instructions for you to follow:\n\n"
-          (ai-org-chat--current-body)))
+  (let ((direction (ai-org-chat--current-body))
         (buffers (ai-org-chat--get-context-buffers)))
     (if buffers
         (ai-org-chat-process-directions direction buffers)
@@ -1158,6 +1159,7 @@ the ai-org-chat system."
        :key (exec-path-from-shell-getenv "ANTHROPIC_KEY")
        :chat-model "claude-3-5-sonnet-20240620"))
 
+;;; End
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
