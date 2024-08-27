@@ -2,13 +2,20 @@
 #+author: Paul Nelson
 
 * Overview
-This package supports a threaded AI chat inside any org-mode buffer.  Here's what it looks like:
+This package supports a threaded AI chat inside any org-mode buffer, with advanced features for code modification and review. Here's what it looks like:
 
 #+attr_html: :width 800px
 #+attr_latex: :width 800px
 [[./img/fruits.png]]
 
-The design is inspired by the ChatGPT web interface.  There are [[https://www.reddit.com/r/emacs/comments/14glmqc/use_emacs_as_a_chatgpt_app/][many AI chat packages]] for Emacs, but I am not aware of any that naturally support multiple conversational pathways.  (Update: [[https://github.com/karthink/gptel][gptel]] now has a similar feature, which I haven't yet tried; it depends upon an pre-release version of Org.)  I'm also using this package as an experiment in ways to tighten the editing loop with AI in Emacs, via context, diffs, etc.
+The design is inspired by the ChatGPT web interface, but goes beyond by offering seamless integration with your Emacs environment. Key features include:
+
+- Threaded conversations supporting multiple pathways
+- Context-aware interactions using buffer contents and file references
+- Direct code modification suggestions with easy review and application
+- Comparison tools for efficiently reviewing AI-suggested changes
+
+While there are [[https://www.reddit.com/r/emacs/comments/14glmqc/use_emacs_as_a_chatgpt_app/][many AI chat packages]] for Emacs, ai-org-chat.el stands out with its natural support for multiple conversational pathways and tight integration with the editing process. (Update: [[https://github.com/karthink/gptel][gptel]] now has a similar feature, which I haven't yet tried; it depends upon an pre-release version of Org.)
 
 The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
 
@@ -145,3 +152,42 @@ When the AI suggests changes to a function or code block in your project, you ca
 - When you're done reviewing, simply exit the Ediff session.  The temporary buffers and tab will be cleaned up automatically.
 
 By leveraging this feature, you can significantly speed up the process of reviewing and incorporating AI-suggested code changes, making your workflow with ai-org-chat more efficient and effective.
+
+* Compare and Apply Changes Feature
+
+The "compare and apply changes" feature streamlines the process of reviewing and incorporating code modifications suggested by the AI directly into your project files.
+
+** How it works
+
+1. The AI suggests changes to your code within the chat buffer.
+2. Use =ai-org-chat-modify-buffers= to process these suggestions.
+3. The AI analyzes the suggestions and generates precise diffs for each affected file.
+4. These diffs are then applied to your project buffers, allowing for easy review and further modification.
+
+** Benefits
+
+- Precise modifications: The AI generates exact diffs, ensuring accurate changes.
+- Easy review: Changes are applied to your buffers but not saved, allowing for careful examination.
+- Seamless workflow: Integrate AI suggestions directly into your development process.
+- Flexible application: Review changes in context and modify as needed before saving.
+
+** Usage
+
+1. Ensure your chat buffer has the necessary context (relevant files or buffers) specified.
+2. Get the AI to suggest code modifications.
+3. Place your cursor on the AI's response containing the suggestions.
+4. Execute =M-x ai-org-chat-modify-buffers=.
+5. Review the changes in your project buffers.
+6. Modify if necessary and save the changes you want to keep.
+
+** Tips
+
+- Always review AI-suggested changes carefully before saving.
+- Use in conjunction with version control for easy tracking and reverting of changes.
+- Combine with the "compare" feature for a comprehensive review process.
+
+By leveraging this feature, you can significantly speed up the process of incorporating AI-suggested code changes, making your workflow with ai-org-chat more efficient and effective.
+
+* Conclusion
+
+ai-org-chat.el offers a powerful, flexible environment for AI-assisted coding and problem-solving within Emacs. With features like threaded conversations, context-aware interactions, and direct code modification capabilities, it provides a uniquely integrated experience for developers looking to leverage AI in their workflow.
