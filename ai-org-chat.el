@@ -955,6 +955,7 @@ and create_file)."
                               "```")))
                    buffers
                    "\n\n"))
+         ;; taken from aider [[https://github.com/paul-gauthier/aider]]
          (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions. Use the provided function calls, namely, generate_diff to describe buffer changes using universal diff format and create_file to create new files.  Notes:
 
 For each file that needs to be changed, write out the changes similar to a unified diff like `diff -U0` would produce.
