@@ -862,7 +862,7 @@ package (e.g., via `make-llm-openai')."
 (cl-defstruct ai-org-chat-file-creation
   filename content)
 
-(defun ai-org-chat--generate-diff-function ()
+(defun ai-org-chat--llm-make-buffer-change ()
   "Create an LLM function call for generating diffs.
 
 This function returns an `llm-function-call' object that represents
@@ -895,7 +895,7 @@ applying changes to buffers based on natural language instructions."
                 :type 'string
                 :required t))))
 
-(defun ai-org-chat--create-file-function ()
+(defun ai-org-chat--llm-make-file-creation ()
   "Create an LLM function call for file creation.
 
 This function returns an `llm-function-call' object that represents
@@ -989,8 +989,8 @@ To move code within a file, use 2 hunks: 1 to delete it from its current locatio
     (llm-make-chat-prompt
      direction
      :context (concat system-message "\n\n" context)
-     :functions (list (ai-org-chat--generate-diff-function)
-                      (ai-org-chat--create-file-function)))))
+     :functions (list (ai-org-chat--llm-make-buffer-change)
+                      (ai-org-chat--llm-make-file-creation)))))
 
 (defun ai-org-chat--parse-llm-response (response)
   "Parse the LLM RESPONSE and return a list of change objects."
@@ -1009,6 +1009,41 @@ To move code within a file, use 2 hunks: 1 to delete it from its current locatio
                           (error "Invalid result for create_file: %S" result))
                         result)
                        (_ (error "Unknown function call: %S" func-name))))))
+
+(defun ai-org-chat--diff-apply (diff)
+  "Apply diffs to some buffers."
+  (interactive "sDiff to apply: ")
+  (dolist (hunks (split-string diff "--- .*\n\\+\\+\\+ " t))
+    (setq hunks (split-string hunks "\n" t))
+    (let ((buf-name (car hunks)))
+      (setq hunks (string-join (cdr hunks) "\n"))
+      (if-let (buf (get-buffer buf-name))
+          (with-current-buffer buf
+            (dolist (hunk (split-string hunks "^@@.*\n" t))
+              (let (before after)
+                (dolist (line (split-string hunk "\n" t))
+                  (cond
+                   ((string-prefix-p " " line)
+                    (push (substring line 1) before)
+                    (push (substring line 1) after))
+                   ((string-prefix-p "-" line)
+                    (push (substring line 1) before))
+                   ((string-prefix-p "+" line)
+                    (push (substring line 1) after))
+                   (t (error "Invalid line in hunk: %s" line))))
+                (setq before (string-join (nreverse before) "\n"))
+                (setq after (string-join (nreverse after) "\n"))
+                ;; Find the start position of the old content
+                (goto-char (point-min))
+                (if (re-search-forward (regexp-quote before) nil t)
+                    (let ((start (match-beginning 0))
+                          (end (match-end 0)))
+                      (delete-region start end)
+                      (goto-char start)
+                      (insert after)
+                      (message "Applied hunk to buffer %s" buf-name))
+                  (message "Hunk not found in buffer %s" buf-name)))))
+        (message "Buffer %s not found" buf-name)))))
 
 (defvar ai-org-chat--actually-apply nil)
 
@@ -1031,13 +1066,14 @@ To move code within a file, use 2 hunks: 1 to delete it from its current locatio
                                          (buffer-file-name buffer))
                                         default-directory))
                         (diff-mode)
-                        (goto-char (point-min)))
-                      (if ai-org-chat--actually-apply
-                          (save-window-excursion
-                            (with-current-buffer temp-diff-buffer
-                              (while (re-search-forward diff-hunk-header-re nil t)
-                                (diff-apply-hunk))))
-                        (display-buffer temp-diff-buffer)))
+                        (ai-org-chat--diff-apply (buffer-string)))
+                      ;; (if ai-org-chat--actually-apply
+                      ;;     (save-window-excursion
+                      ;;       (with-current-buffer temp-diff-buffer
+                      ;;         (while (re-search-forward diff-hunk-header-re nil t)
+                      ;;           (diff-apply-hunk))))
+                      ;;   (display-buffer temp-diff-buffer))
+                      )
                   ;; (kill-buffer temp-diff-buffer)
                   )))
           (message "Buffer not found: %s" (ai-org-chat-buffer-change-buffer change)))))
@@ -1049,7 +1085,8 @@ To move code within a file, use 2 hunks: 1 to delete it from its current locatio
 (defun ai-org-chat-process-directions (direction buffers)
   "Process DIRECTION for BUFFERS using the auxiliary LLM."
   (let* ((prompt (ai-org-chat--generate-auxiliary-llm-prompt direction buffers))
-         (response (llm-chat ai-org-chat-auxiliary-provider prompt))
+         (provider (or ai-org-chat-auxiliary-provider ai-org-chat-provider))
+         (response (llm-chat provider prompt))
          (changes (ai-org-chat--parse-llm-response response)))
     (if changes
         (progn
