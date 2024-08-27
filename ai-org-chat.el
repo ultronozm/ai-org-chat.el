@@ -664,61 +664,97 @@ ones."
 (declare-function ediff-cleanup-mess "ediff")
 (declare-function ace-window "ace-window")
 
-(defun ai-org-chat--analyze-definition (language)
-  "Analyze the current buffer for a single definition at the beginning.
-LANGUAGE specifies the programming language to analyze.
-Return the SIGNATURE if found at the buffer start, nil otherwise."
+(defun ai-org-chat--single-defun-p ()
+  "Check if the current buffer contains a single function or variable definition.
+This function uses `beginning-of-defun' to efficiently determine if there's
+only one definition starting at the beginning of the buffer and extending
+to its end. Returns non-nil if a single definition is found, nil otherwise."
   (save-excursion
-    (goto-char (point-min))
-    (let ((def-rx (pcase language
-                    ("python" (rx bos
-                                  (zero-or-more (syntax whitespace))
-                                  (or "def" "class")
-                                  (one-or-more (syntax whitespace))
-                                  (group (one-or-more (or (syntax word)
-                                                          (syntax symbol))))
-                                  (zero-or-more (syntax whitespace))
-                                  "("))
-                    (_ (rx bos
-                           (zero-or-more (syntax whitespace))
-                           (optional (syntax open-parenthesis))
-                           (group (one-or-more (or (syntax word)
-                                                   (syntax symbol))))
-                           " "  ; Exactly one space
-                           (group (one-or-more (or (syntax word)
-                                                   (syntax symbol))))
-                           symbol-end
-                           (syntax whitespace)
-                           )))))
-      (when (looking-at def-rx)
-        (match-string-no-properties 0)))))
+    (goto-char (point-max))
+    (beginning-of-defun)
+    (and (= (point) (point-min))
+         (< (point) (point-max)))))
 
+(defun ai-org-chat--extract-defun-signature ()
+  "Extract the signature of the function or variable definition at point.
+Uses imenu to analyze the buffer and find the current definition.
+Returns a cons cell (TYPE . NAME) where:
+  TYPE is the imenu type (e.g., \"Variables\", \"Functions\", or nil)
+  NAME is the function or variable name.
+Returns nil if no definition is found or if imenu is unavailable."
+  (condition-case err
+      (let* ((index-alist (imenu--make-index-alist))
+             (pos (point))
+             (found-item nil)
+             (found-type nil))
+        (cl-labels ((search-alist
+                      (alist current-type)
+                      (cl-loop for item in alist
+                               do (cond
+                                   ((and (consp item) (consp (cdr item)) (not (numberp (cdr item))))
+                                    (let ((result (search-alist (cdr item) (car item))))
+                                      (when result (cl-return result))))
+                                   ((and (consp item) (number-or-marker-p (cdr item))
+                                         (<= (cdr item) pos)
+                                         (or (null found-item)
+                                             (> (cdr item) (cdr found-item))))
+                                    (setq found-item item
+                                          found-type current-type))))))
+          (search-alist index-alist nil))
+        (when found-item
+          (cons found-type (car found-item))))
+    (imenu-unavailable
+     (message "Imenu is unavailable in this buffer")
+     nil)
+    (error
+     (message "An error occurred: %s" (error-message-string err))
+     nil)))
 
-(defun ai-org-chat--find-matching-buffer (signature language original-buffer buffers-to-search)
-  "Find a buffer containing a definition matching SIGNATURE for LANGUAGE.
-Exclude ORIGINAL-BUFFER from the search.  Search through BUFFERS-TO-SEARCH.
-Return a list (BUFFER START END) if found, nil otherwise."
-  (cl-loop for buf in buffers-to-search
-           when (and (not (eq buf original-buffer))
-                     (with-current-buffer buf
-                       (save-excursion
-                         (goto-char (point-min))
-                         (re-search-forward
-                          (concat "^\\s-*" (regexp-quote signature)) nil t))))
-           return (list buf (match-beginning 0)
-                        (with-current-buffer buf
-                          (save-excursion
-                            (goto-char (match-beginning 0))
-                            (if (string= language "python")
-                                (progn
-                                  (python-nav-end-of-defun)
-                                  (point))
+(defun ai-org-chat--match-signature-in-buffer (signature buffer)
+  "Find a definition in BUFFER matching the given SIGNATURE.
+SIGNATURE should be a cons cell (TYPE . NAME) where:
+  TYPE is the imenu type (e.g., \"Variables\", \"Functions\", or nil)
+  NAME is the function or variable name.
+BUFFER is the buffer to search in.
+
+Returns a list (BUFFER START END) if a match is found, where:
+  START is the beginning position of the matched definition
+  END is the ending position of the matched definition
+Returns nil if no match is found."
+  (with-current-buffer buffer
+    (let ((index-alist (flatten-imenu-index (imenu--make-index-alist))))
+      (cl-loop for item in index-alist
+               when (and (equal (car item) (car signature))
+                         (equal (cadr item) (cdr signature)))
+               return (list buffer
+                            (cddr item)
+                            (save-excursion
+                              (goto-char (cddr item))
                               (end-of-defun)
                               (point)))))))
 
+(defun ai-org-chat--find-matching-defun (signature aux-bufs)
+  "Find a definition matching SIGNATURE in the list of auxiliary buffers AUX-BUFS.
+SIGNATURE should be a cons cell (TYPE . NAME) as returned by
+`ai-org-chat--extract-defun-signature'.
+AUX-BUFS is a list of buffers to search for the matching definition.
+
+Returns the first matching result from `ai-org-chat--match-signature-in-buffer',
+which is a list (BUFFER START END), or nil if no match is found."
+  (cl-loop for buf in aux-bufs
+           for match = (ai-org-chat--match-signature-in-buffer signature buf)
+           when match return match))
+
 (defun ai-org-chat--setup-ediff (buf1 buf2 &optional narrowing-info)
-  "Set up ediff session between BUF1 and BUF2.
-Optional NARROWING-INFO is a list (START END) for narrowing BUF1."
+  "Set up an ediff session comparing BUF1 and BUF2.
+BUF1 and BUF2 are the buffers to be compared.
+Optional NARROWING-INFO is a list (START END) for narrowing BUF1.
+
+This function handles:
+- Setting up the ediff session
+- Applying narrowing to BUF1 if NARROWING-INFO is provided
+- Adding a quit hook to restore original buffer states
+- Cleaning up the ediff mess and closing the tab when done"
   (let ((original-narrowing-start
          (with-current-buffer buf1
            (point-min-marker)))
@@ -749,18 +785,30 @@ Optional NARROWING-INFO is a list (START END) for narrowing BUF1."
                   nil t)))))
 
 (defun ai-org-chat--compare-impl (src-buf aux-bufs language)
-  "Implement comparison logic for SRC-BUF in LANGUAGE.
-AUX-BUFS are the auxiliary buffers to search for matching definitions."
+  "Implement comparison logic for SRC-BUF against auxiliary buffers.
+SRC-BUF is the buffer containing the source code to be compared.
+AUX-BUFS is a list of auxiliary buffers to search for matching definitions.
+LANGUAGE is the programming language of the source code (currently unused).
+
+This function:
+1. Checks if SRC-BUF contains a single definition
+2. If so, tries to find a matching definition in AUX-BUFS
+3. Sets up an ediff session for the matched definitions or whole buffers
+4. Handles window management for the comparison"
   (with-current-buffer src-buf
     (goto-char (point-min))
     (let ((comparison-set-up nil))
-      (when-let* ((signature (ai-org-chat--analyze-definition language))
-                  (matching-info (ai-org-chat--find-matching-buffer
-                                  signature language src-buf aux-bufs)))
-        (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
-                                  (list (nth 1 matching-info)
-                                        (nth 2 matching-info)))
-        (setq comparison-set-up t))
+      (when (ai-org-chat--single-defun-p)
+        (when-let* ((signature (ai-org-chat--extract-defun-signature))
+                    (matching-info (ai-org-chat--find-matching-defun
+                                    signature
+                                    (seq-remove
+                                     (lambda (buf) (eq src-buf buf))
+                                     aux-bufs))))
+          (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
+                                    (list (nth 1 matching-info)
+                                          (nth 2 matching-info)))
+          (setq comparison-set-up t)))
 
       (unless comparison-set-up
         (require 'ace-window)
