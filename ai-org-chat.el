@@ -654,6 +654,11 @@ ones."
                                (string-trim-right code))
                        t t)))))
 
+(defun ai-org-chat-replace-backticks-with-equal-signs ()
+  "Interactively replace backtick-quoted text with org-mode style inline code formatting."
+  (interactive)
+  (query-replace-regexp "`\\([^`]+\\)`" "=\\1="))
+
 ;;; Comparison
 
 (declare-function ediff-cleanup-mess "ediff")
