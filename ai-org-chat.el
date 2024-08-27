@@ -664,31 +664,41 @@ ones."
 (declare-function ediff-cleanup-mess "ediff")
 (declare-function ace-window "ace-window")
 
-(defun ai-org-chat--analyze-definition ()
-  "Analyze the current buffer for a single Emacs Lisp definition.
-Return a cons cell (SIGNATURE . END-POINT) if found, nil otherwise.
-Assumes point is at (point-min)."
-  (let ((def-keywords '("defun" "cl-defun" "defmacro" "cl-defmacro" "defsubst"
-                        "cl-defsubst" "defvar" "defcustom" "defconst" "defface"
-                        "defgroup"))
-        (case-fold-search nil))
-    (when (looking-at (concat "^\\s-*(\\(" (regexp-opt def-keywords) "\\)\\_>"))
-      (save-excursion
-        (let ((def-start (point)))
-          (forward-sexp)
-          (when (>= (point) (1- (point-max)))
-            (goto-char def-start)
-            (when (re-search-forward
-                   (concat "(" (regexp-opt def-keywords)
-                           "\\s-+\\(\\(?:\\sw\\|\\s_\\)+\\)") nil t)
-              (cons (match-string-no-properties 0)
-                    (save-excursion (forward-sexp) (point))))))))))
+(defun ai-org-chat--analyze-definition (language)
+  "Analyze the current buffer for a single definition at the beginning.
+LANGUAGE specifies the programming language to analyze.
+Return the SIGNATURE if found at the buffer start, nil otherwise."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((def-rx (pcase language
+                    ("python" (rx bos
+                                  (zero-or-more (syntax whitespace))
+                                  (or "def" "class")
+                                  (one-or-more (syntax whitespace))
+                                  (group (one-or-more (or (syntax word)
+                                                          (syntax symbol))))
+                                  (zero-or-more (syntax whitespace))
+                                  "("))
+                    (_ (rx bos
+                           (zero-or-more (syntax whitespace))
+                           (optional (syntax open-parenthesis))
+                           (group (one-or-more (or (syntax word)
+                                                   (syntax symbol))))
+                           " "  ; Exactly one space
+                           (group (one-or-more (or (syntax word)
+                                                   (syntax symbol))))
+                           symbol-end
+                           (syntax whitespace)
+                           )))))
+      (when (looking-at def-rx)
+        (match-string-no-properties 0)))))
 
-(defun ai-org-chat--find-matching-buffer (signature original-buffer)
-  "Find a buffer containing a definition matching SIGNATURE.
-Exclude ORIGINAL-BUFFER from the search.  Return a list (BUFFER START
-END) if found, nil otherwise."
-  (cl-loop for buf in (mapcar #'window-buffer (window-list))
+
+(defun ai-org-chat--find-matching-buffer (signature language original-buffer buffers-to-search)
+  "Find a buffer containing a definition matching SIGNATURE for LANGUAGE.
+Exclude ORIGINAL-BUFFER from the search.  Search through BUFFERS-TO-SEARCH.
+Return a list (BUFFER START END) if found, nil otherwise."
+  (cl-loop for buf in buffers-to-search
            when (and (not (eq buf original-buffer))
                      (with-current-buffer buf
                        (save-excursion
@@ -699,8 +709,12 @@ END) if found, nil otherwise."
                         (with-current-buffer buf
                           (save-excursion
                             (goto-char (match-beginning 0))
-                            (end-of-defun)
-                            (point))))))
+                            (if (string= language "python")
+                                (progn
+                                  (python-nav-end-of-defun)
+                                  (point))
+                              (end-of-defun)
+                              (point)))))))
 
 (defun ai-org-chat--setup-ediff (buf1 buf2 &optional narrowing-info)
   "Set up ediff session between BUF1 and BUF2.
@@ -734,47 +748,53 @@ Optional NARROWING-INFO is a list (START END) for narrowing BUF1."
                     (tab-bar-close-tab))
                   nil t)))))
 
-(defun ai-org-chat--compare-impl (src-buf is-elisp)
-  "Implement comparison logic for SRC-BUF.
-If IS-ELISP is non-nil, attempt to match Emacs Lisp definitions."
+(defun ai-org-chat--compare-impl (src-buf aux-bufs language)
+  "Implement comparison logic for SRC-BUF in LANGUAGE.
+AUX-BUFS are the auxiliary buffers to search for matching definitions."
   (with-current-buffer src-buf
     (goto-char (point-min))
     (let ((comparison-set-up nil))
-      (when is-elisp
-        (when-let* ((def-info (ai-org-chat--analyze-definition))
-                    (matching-info (ai-org-chat--find-matching-buffer
-                                    (car def-info) src-buf)))
-          (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
-                                    (list (nth 1 matching-info)
-                                          (nth 2 matching-info)))
-          (setq comparison-set-up t)))
+      (when-let* ((signature (ai-org-chat--analyze-definition language))
+                  (matching-info (ai-org-chat--find-matching-buffer
+                                  signature language src-buf aux-bufs)))
+        (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
+                                  (list (nth 1 matching-info)
+                                        (nth 2 matching-info)))
+        (setq comparison-set-up t))
 
       (unless comparison-set-up
         (require 'ace-window)
         (let ((ai-window (selected-window)))
           (when (> (count-windows) 2)
             (call-interactively #'ace-window))
+          (delete-window ai-window)
           (let ((buf1 (current-buffer)))
-            (delete-window ai-window)
             (ai-org-chat--setup-ediff buf1 src-buf)))))))
 
 ;;;###autoload
 (defun ai-org-chat-compare ()
   "Compare a source block with a selected window using ediff.
-If the source block is a single Emacs Lisp defun, it tries to find a matching
-defun in other visible buffers and compares them directly."
+If the source block is a single function or class definition, it tries to find a matching
+definition in other visible buffers and compares them directly."
   (interactive)
   (let* ((element (org-element-at-point))
          (type (org-element-type element))
          (language (org-element-property :language element)))
     (when (eq type 'src-block)
       (let ((org-src-window-setup 'current-window)
-            (is-elisp (and language (member language '("emacs-lisp" "elisp")))))
+            (aux-bufs
+             (let ((visible-buffers (mapcar #'window-buffer
+                                            (seq-remove
+                                             (lambda (window)
+                                               (eq (window-buffer window) (current-buffer)))
+                                             (window-list))))
+                   (context-buffers (ai-org-chat--get-context-buffers)))
+               (delete-dups (append visible-buffers context-buffers)))))
         (condition-case err
             (progn
               (tab-duplicate)
               (org-edit-special)
-              (ai-org-chat--compare-impl (current-buffer) is-elisp))
+              (ai-org-chat--compare-impl (current-buffer) aux-bufs language))
           (error
            (tab-bar-close-tab)
            (signal (car err) (cdr err))))))))
