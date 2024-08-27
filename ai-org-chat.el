@@ -887,7 +887,6 @@ and create_file)."
                               "```")))
                    buffers
                    "\n\n"))
-         ;; Don't include line numbers like `diff -U0` does.  The user's patch tool doesn't need them.
          (system-message "You are an assistant that generates a list of buffer modifications and file creations based on given directions. Use the provided function calls, namely, generate_diff to describe buffer changes using universal diff format and create_file to create new files.  Notes:
 
 For each file that needs to be changed, write out the changes similar to a unified diff like `diff -U0` would produce.
@@ -896,6 +895,8 @@ Make sure you include the first 2 lines with the file paths.
 Don't include timestamps with the file paths.
 
 Start each hunk of changes with a `@@ ... @@` line.
+Don't include line numbers like `diff -U0` does.
+The user's patch tool doesn't need them.
 
 The user's patch tool needs CORRECT patches that apply cleanly against the current contents of the file!
 Think carefully and make sure you include and mark all lines that need to be removed or changed as `-` lines.
