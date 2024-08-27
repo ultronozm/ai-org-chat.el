@@ -961,7 +961,7 @@ and create_file)."
 
 For each file that needs to be changed, write out the changes similar to a unified diff like `diff -U0` would produce.
 
-Make sure you include the first 2 lines with the file paths.
+Don't include the file paths - the user's patch tool doesn't need them.
 Don't include timestamps with the file paths.
 
 Start each hunk of changes with a `@@ ... @@` line.
@@ -1015,37 +1015,29 @@ To move code within a file, use 2 hunks: 1 to delete it from its current locatio
 (defun ai-org-chat--diff-apply (diff)
   "Apply diffs to some buffers."
   (interactive "sDiff to apply: ")
-  (dolist (hunks (split-string diff "--- .*\n\\+\\+\\+ " t))
-    (setq hunks (split-string hunks "\n" t))
-    (let ((buf-name (car hunks)))
-      (setq hunks (string-join (cdr hunks) "\n"))
-      (if-let (buf (get-buffer buf-name))
-          (with-current-buffer buf
-            (dolist (hunk (split-string hunks "^@@.*\n" t))
-              (let (before after)
-                (dolist (line (split-string hunk "\n" t))
-                  (cond
-                   ((string-prefix-p " " line)
-                    (push (substring line 1) before)
-                    (push (substring line 1) after))
-                   ((string-prefix-p "-" line)
-                    (push (substring line 1) before))
-                   ((string-prefix-p "+" line)
-                    (push (substring line 1) after))
-                   (t (error "Invalid line in hunk: %s" line))))
-                (setq before (string-join (nreverse before) "\n"))
-                (setq after (string-join (nreverse after) "\n"))
-                ;; Find the start position of the old content
-                (goto-char (point-min))
-                (if (re-search-forward (regexp-quote before) nil t)
-                    (let ((start (match-beginning 0))
-                          (end (match-end 0)))
-                      (delete-region start end)
-                      (goto-char start)
-                      (insert after)
-                      (message "Applied hunk to buffer %s" buf-name))
-                  (message "Hunk not found in buffer %s" buf-name)))))
-        (message "Buffer %s not found" buf-name)))))
+  (dolist (hunk (split-string diff "^@@.*\n" t))
+    (let (before after)
+      (dolist (line (split-string hunk "\n" t))
+        (cond
+         ((string-prefix-p " " line)
+          (push (substring line 1) before)
+          (push (substring line 1) after))
+         ((string-prefix-p "-" line)
+          (push (substring line 1) before))
+         ((string-prefix-p "+" line)
+          (push (substring line 1) after))
+         (t (error "Invalid line in hunk: %s" line))))
+      (setq before (string-join (nreverse before) "\n"))
+      (setq after (string-join (nreverse after) "\n"))
+      ;; Find the start position of the old content
+      (goto-char (point-min))
+      (if (re-search-forward (regexp-quote before) nil t)
+          (let ((start (match-beginning 0))
+                (end (match-end 0)))
+            (delete-region start end)
+            (goto-char start)
+            (insert after))
+        (message "Hunk not found")))))
 
 (defvar ai-org-chat--actually-apply nil)
 
