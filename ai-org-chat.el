@@ -589,11 +589,25 @@ Excludes current buffer."
 
 (require 'project)
 
-(defun ai-org-chat-add-project-files-context (dir)
-  "Add all files from a selected project as context for current org node.
+(defun ai-org-chat--filter-files-by-wildcard (files wildcard)
+  "Filter FILES by WILDCARD pattern.
+If WILDCARD is nil or \"*\", return all FILES.
+Otherwise, return only files matching the WILDCARD pattern."
+  (if (or (null wildcard) (string= wildcard "*"))
+      files
+    (let ((regexp (wildcard-to-regexp wildcard)))
+      (seq-filter (lambda (file)
+                    (string-match-p regexp file))
+                  files))))
+
+(defun ai-org-chat-add-project-files-context (dir &optional wildcard)
+  "Add files from a selected project as context for current org node.
 Prompts for the project to use and excludes the current file.  DIR is
-the directory of the selected project."
-  (interactive (list (funcall project-prompter)))
+the directory of the selected project.  WILDCARD, if provided, is used
+to filter the files (e.g., \"*.py\" for Python files)."
+  (interactive
+   (list (funcall project-prompter)
+         (read-string "File wildcard (optional, e.g., *.py): " nil nil "*")))
   (let ((project (project-current nil dir))
         (current-file (buffer-file-name)))
     (if (not project)
@@ -606,11 +620,14 @@ the directory of the selected project."
              (filtered-files
               (remove (and current-file
                            (file-relative-name current-file default-directory))
-                      relative-files)))
-        (ai-org-chat--add-context filtered-files)
-        (message "Added %d files from project %s as context"
-                 (length filtered-files)
-                 (project-root project))))))
+                      relative-files))
+             (final-files
+              (ai-org-chat--filter-files-by-wildcard filtered-files wildcard)))
+        (ai-org-chat--add-context final-files)
+        (message "Added %d files from project %s as context (wildcard: %s)"
+                 (length final-files)
+                 (project-root project)
+                 wildcard)))))
 
 ;;; Convenience
 
