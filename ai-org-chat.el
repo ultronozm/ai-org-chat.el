@@ -782,15 +782,15 @@ Returns nil if no match is found."
                               (end-of-defun)
                               (point)))))))
 
-(defun ai-org-chat--find-matching-defun (signature aux-bufs)
-  "Find a definition matching SIGNATURE in the list of auxiliary buffers AUX-BUFS.
+(defun ai-org-chat--find-matching-defun (signature buffers)
+  "Find definition matching SIGNATURE in BUFFERS.
 SIGNATURE should be a cons cell (TYPE . NAME) as returned by
 `ai-org-chat--extract-defun-signature'.
-AUX-BUFS is a list of buffers to search for the matching definition.
+BUFFERS is a list of buffers to search for the matching definition.
 
 Returns the first matching result from `ai-org-chat--match-signature-in-buffer',
 which is a list (BUFFER START END), or nil if no match is found."
-  (cl-loop for buf in aux-bufs
+  (cl-loop for buf in buffers
            for match = (ai-org-chat--match-signature-in-buffer signature buf)
            when match return match))
 
@@ -833,15 +833,15 @@ This function handles:
                     (tab-bar-close-tab))
                   nil t)))))
 
-(defun ai-org-chat--compare-impl (src-buf aux-bufs language)
+(defun ai-org-chat--compare-impl (src-buf auxiliary-buffers language)
   "Implement comparison logic for SRC-BUF against auxiliary buffers.
 SRC-BUF is the buffer containing the source code to be compared.
-AUX-BUFS is a list of auxiliary buffers to search for matching definitions.
+AUXILIARY-BUFFERS is a list of auxiliary buffers to search for matching definitions.
 LANGUAGE is the programming language of the source code (currently unused).
 
 This function:
 1. Checks if SRC-BUF contains a single definition
-2. If so, tries to find a matching definition in AUX-BUFS
+2. If so, tries to find a matching definition in AUXILIARY-BUFFERS
 3. Sets up an ediff session for the matched definitions or whole buffers
 4. Handles window management for the comparison"
   (with-current-buffer src-buf
@@ -853,7 +853,7 @@ This function:
                                     signature
                                     (seq-remove
                                      (lambda (buf) (eq src-buf buf))
-                                     aux-bufs))))
+                                     auxiliary-buffers))))
           (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
                                     (list (nth 1 matching-info)
                                           (nth 2 matching-info)))
@@ -879,7 +879,7 @@ definition in other visible buffers and compares them directly."
          (language (org-element-property :language element)))
     (when (eq type 'src-block)
       (let ((org-src-window-setup 'current-window)
-            (aux-bufs
+            (auxiliary-buffers
              (let ((visible-buffers (mapcar #'window-buffer
                                             (seq-remove
                                              (lambda (window)
