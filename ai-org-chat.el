@@ -727,6 +727,36 @@ Returns nil if no definition is found or if imenu is unavailable."
      (message "An error occurred: %s" (error-message-string err))
      nil)))
 
+(defun ai-org-chat--flatten-imenu-index (index)
+  "Flatten the imenu INDEX into a single list of items.
+
+Each item in the returned list is a cons cell of the form:
+(TYPE . (NAME . POSITION))
+
+where:
+- TYPE is a string representing the hierarchy (e.g., \"Functions/Helpers\")
+- NAME is the item name
+- POSITION is the buffer position of the item
+
+The TYPE string uses \"/\" as a separator for nested categories.
+Top-level items have TYPE set to nil.
+
+This function recursively traverses the imenu index structure,
+preserving the hierarchical information in the TYPE field."
+  (let ((result '()))
+    (cl-labels ((flatten
+                  (items prefix)
+                  (dolist (item items)
+                    (if (imenu--subalist-p item)
+                        (let ((new-prefix (if prefix
+                                              (concat prefix "/" (car item))
+                                            (car item))))
+                          (flatten (cdr item) new-prefix))
+                      (unless (equal (car item) "*Rescan*")
+                        (push (cons prefix (cons (car item) (cdr item))) result))))))
+      (flatten index nil))
+    (nreverse result)))
+
 (defun ai-org-chat--match-signature-in-buffer (signature buffer)
   "Find a definition in BUFFER matching the given SIGNATURE.
 SIGNATURE should be a cons cell (TYPE . NAME) where:
@@ -740,7 +770,8 @@ Returns a list (BUFFER START END) if a match is found, where:
 Returns nil if no match is found."
   (with-current-buffer buffer
     (imenu-flush-cache)
-    (let ((index-alist (flatten-imenu-index (imenu--make-index-alist))))
+    (let ((index-alist
+           (ai-org-chat--flatten-imenu-index (imenu--make-index-alist))))
       (cl-loop for item in index-alist
                when (and (equal (car item) (car signature))
                          (equal (cadr item) (cdr signature)))
