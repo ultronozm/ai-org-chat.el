@@ -692,34 +692,43 @@ Returns non-nil if a single defun is found, nil otherwise."
     (and (= (point) (point-min))
          (< (point) (point-max)))))
 
+(require 'imenu)
+
+(defun ai-org-chat--search-imenu-alist (alist pos)
+  "Search the imenu ALIST for item closest to but not after POS.
+Returns a cons cell (TYPE . NAME) where TYPE is the imenu type and
+NAME is the function or variable name. Returns nil if no item is found."
+  (let ((found-item nil)
+        (found-type nil))
+    (cl-labels ((search-alist
+                  (alist current-type)
+                  (cl-loop for item in alist
+                           do (cond
+                               ((and (consp item) (consp (cdr item)) (not (numberp (cdr item))))
+                                (let ((result (search-alist (cdr item) (car item))))
+                                  (when result (cl-return result))))
+                               ((and (consp item) (number-or-marker-p (cdr item))
+                                     (<= (cdr item) pos)
+                                     (or (null found-item)
+                                         (> (cdr item) (cdr found-item))))
+                                (setq found-item item
+                                      found-type current-type))))))
+      (search-alist alist nil))
+    (when found-item
+      (cons found-type (car found-item)))))
+
 (defun ai-org-chat--extract-defun-signature ()
   "Extract the signature of the function or variable definition at point.
 Uses imenu to analyze the buffer and find the current definition.
-Returns a cons cell (TYPE . NAME) where:
-  TYPE is the imenu type (e.g., \"Variables\", \"Functions\", or nil)
-  NAME is the function or variable name.
+Returns a cons cell (TYPE . NAME) where TYPE is the imenu type (e.g.,
+\"Variables\" or nil) and NAME is the function or variable name.
 Returns nil if no definition is found or if imenu is unavailable."
+  (require 'imenu)
+  (imenu-flush-cache)
   (condition-case err
       (let* ((index-alist (imenu--make-index-alist))
-             (pos (point))
-             (found-item nil)
-             (found-type nil))
-        (cl-labels ((search-alist
-                      (alist current-type)
-                      (cl-loop for item in alist
-                               do (cond
-                                   ((and (consp item) (consp (cdr item)) (not (numberp (cdr item))))
-                                    (let ((result (search-alist (cdr item) (car item))))
-                                      (when result (cl-return result))))
-                                   ((and (consp item) (number-or-marker-p (cdr item))
-                                         (<= (cdr item) pos)
-                                         (or (null found-item)
-                                             (> (cdr item) (cdr found-item))))
-                                    (setq found-item item
-                                          found-type current-type))))))
-          (search-alist index-alist nil))
-        (when found-item
-          (cons found-type (car found-item))))
+             (pos (point)))
+        (ai-org-chat--search-imenu-alist index-alist pos))
     (imenu-unavailable
      (message "Imenu is unavailable in this buffer")
      nil)
