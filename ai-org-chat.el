@@ -34,14 +34,22 @@
 (require 'llm)
 (require 'json)
 
+(declare-function gptel-request "gptel")
+(defvar gptel-backend)
+(defvar gptel--openai)
+
 (defgroup ai-org-chat nil
   "Threaded chat with AI agent in org buffers."
   :group 'hypermedia)
 
 (defcustom ai-org-chat-provider nil
   "The LLM provider to use for AI chat.
-This should be an instance of an LLM provider created using the `llm'
-package (e.g., via `make-llm-openai')."
+This should be either
+
+- an instance of an LLM provider created using the `llm'
+package (e.g., via `make-llm-openai'), or
+
+- the symbol `gptel'."
   :type 'symbol)
 
 (defcustom ai-org-chat-user-name "User"
@@ -126,13 +134,23 @@ insert local variables, and add initial heading."
                           lines))))
     (mapconcat 'identity newlines "\n")))
 
+(defun ai-org-chat--current-heading-and-body ()
+  "Return cons cell with heading and body of current entry.
+The heading excludes tags and TODO keywords.  The body consists
+of all text between the heading and the first subtree, but
+excluding the :PROPERTIES: drawer, if any."
+  (let* ((heading (org-get-heading t t))
+         (body (ai-org-chat--current-body)))
+    (cons heading body)))
+
 (defun ai-org-chat--ancestor-messages ()
-  "Return list of ancestor messages for the current entry."
+  "Return list of ancestor messages for the current entry.
+Each message is a cons cell (heading . body)."
   (let ((ancestors '()))
-    (push (ai-org-chat--current-body) ancestors)
+    (push (ai-org-chat--current-heading-and-body) ancestors)
     (save-excursion
       (while (org-up-heading-safe)
-        (push (ai-org-chat--current-body) ancestors)))
+        (push (ai-org-chat--current-heading-and-body) ancestors)))
     ancestors))
 
 ;;; Response generation
@@ -160,6 +178,37 @@ have no effect."
           (insert (substring response prefix-length)))))
      ((listp response)
       (message "Response is a list: %s" response)))))
+
+(defcustom ai-org-chat-ai-name "AI"
+  "AI name to insert into buffer."
+  :type 'string)
+
+(defun ai-org-chat--format-messages (messages system-context)
+  "Format MESSAGES and SYSTEM-CONTEXT according to the selected provider."
+  (if (eq ai-org-chat-provider 'gptel)
+      (let ((formatted-messages
+             (mapcar (lambda (msg)
+                       (let ((role (if (equal (car msg) ai-org-chat-ai-name)
+                                       (if (and (boundp 'gptel-model)
+                                                (string-match-p "gemini" gptel-model))
+                                           "model"
+                                         "assistant")
+                                     "user")))
+                         (if (and (boundp 'gptel-model)
+                                  (string-match-p "gemini" gptel-model))
+                             `((role . ,role)
+                               (parts . ((text . ,(cdr msg)))))
+                           `((role . ,role)
+                             (content . ,(cdr msg))))))
+                     messages)))
+        (if (and (boundp 'gptel-backend)
+                 (boundp 'gptel-openai)
+                 (eq gptel-backend gptel--openai))
+            (cons `((role . "system")
+                    (content . ,system-context))
+                  formatted-messages)
+          formatted-messages))
+    (mapcar #'cdr messages)))
 
 (defun ai-org-chat--call-with-functions (provider prompt buffer point remaining-depth)
   "Call the LLM, optionally streaming output to buffer.
@@ -260,6 +309,35 @@ FUNC is the llm-function-call object."
 (defvar ai-org-chat-max-recursion-depth 10
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
+(defun ai-org-chat--get-response (messages point system-context)
+  "Get response from the selected backend.
+MESSAGES is the list of conversation messages.
+POINT is where to insert the response.
+SYSTEM-CONTEXT is the system message with context."
+  (if (eq ai-org-chat-provider 'gptel)
+      (progn
+        (unless (featurep 'gptel)
+          (require 'gptel))
+        (gptel-request
+         (ai-org-chat--format-messages messages system-context)
+         :position point
+         :stream t
+         :in-place t))
+    (let ((prompt (llm-make-chat-prompt
+                   (ai-org-chat--format-messages messages system-context)
+                   :context system-context
+                   :functions (mapcar (lambda (tool-symbol)
+                                        (ai-org-chat--wrap-function
+                                         (symbol-value (intern tool-symbol))
+                                         point))
+                                      (org-entry-get-multivalued-property (point) "TOOLS")))))
+      (ai-org-chat--call-with-functions
+       ai-org-chat-provider
+       prompt
+       (marker-buffer point)
+       (marker-position point)
+       ai-org-chat-max-recursion-depth))))
+
 (defun ai-org-chat-respond ()
   "Insert response from AI after current heading in org buffer."
   (interactive)
@@ -272,22 +350,8 @@ FUNC is the llm-function-call object."
                   (insert "\n")
                   (save-excursion
                     (ai-org-chat--new-subtree ai-org-chat-user-name))
-                  (point-marker)))
-         (tools (mapcar (lambda (tool-symbol)
-                          (ai-org-chat--wrap-function
-                           (symbol-value (intern tool-symbol))
-                           point))
-                        (org-entry-get-multivalued-property (point) "TOOLS")))
-         (prompt (llm-make-chat-prompt
-                  messages
-                  :context system-context
-                  :functions tools)))
-    (ai-org-chat--call-with-functions
-     ai-org-chat-provider
-     prompt
-     (marker-buffer point)
-     (marker-position point)
-     ai-org-chat-max-recursion-depth)))
+                  (point-marker))))
+    (ai-org-chat--get-response messages point system-context)))
 
 ;;; Setting up new chats
 
