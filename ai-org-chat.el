@@ -358,25 +358,27 @@ into that buffer, applying the filters in the variable
       (insert region-contents))))
 
 ;;;###autoload
-(defun ai-org-chat-new ()
+(defun ai-org-chat-new (arg)
   "Start a new AI chat buffer, optionally including the active region.
 
-If the mark is active, this function copies the region contents into a new
-buffer, enclosing them in an appropriate source block.  The source block type
-is determined based on the major mode of the original buffer.  This is useful
-for starting a conversation about a specific piece of code or text.
+If a region is selected, its contents are copied into a new buffer
+within an appropriate source block.  Otherwise, creates an empty buffer.
 
-The new buffer is created with a timestamped filename in the directory
-specified by `ai-org-chat-dir'.  The buffer is set up with org-mode and
-`ai-org-chat-minor-mode' enabled.
+The new buffer is created with a timestamped filename in `ai-org-chat-dir',
+and set up with `org-mode' and `ai-org-chat-minor-mode' enabled.
 
-If no region is active, it creates an empty buffer ready for AI chat interaction.
-
-In both cases, the new buffer is set up with `ai-org-chat-minor-mode' enabled."
-  (interactive)
-  (if (region-active-p)
-      (ai-org-chat-new-region (region-beginning) (region-end))
-    (ai-org-chat-new-empty)))
+With prefix argument ARG, immediately call `ai-org-chat-add-visible-buffers-context'
+on the new file, with point positioned at the top of the document."
+  (interactive "P")
+  (let ((original-buffer (current-buffer)))
+    (if (region-active-p)
+        (ai-org-chat-new-region (region-beginning) (region-end))
+      (ai-org-chat-new-empty))
+    (when arg
+      (save-excursion
+        (goto-char (point-min))
+        (ai-org-chat-add-visible-buffers-context)
+        (ai-org-chat--add-context (list (buffer-name original-buffer)))))))
 
 ;;; Context
 

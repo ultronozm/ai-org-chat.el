@@ -57,7 +57,7 @@ Next, download this repository, install using =M-x package-install-file= (or pac
 #+end_src
 
 * Usage
-When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if you followed the above configuration).  This visits a new file in the specified directory ("~/gpt" by default).  If the region was active, then it will be quoted in the new buffer.  Example:
+When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if you followed the above configuration).  This visits a new file in the specified directory ("~/gpt" by default).  If the region was active, then it will be quoted in the new buffer.  With a prefix argument (=C-u=), it will immediately add visible buffers as [[Context][context]] to the new chat.  Example:
 
 #+attr_html: :width 800px
 #+attr_latex: :width 800px
