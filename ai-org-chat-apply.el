@@ -316,15 +316,6 @@ After:\n%s" buf-name before after)))))
           (message "Applied %d change(s) to buffers and/or files" (length changes)))
       (message "No changes to apply"))))
 
-(defun ai-org-chat--get-context-buffers ()
-  "Get list of buffers specified in CONTEXT properties."
-  (let ((buffer-names (ai-org-chat--get-permanent-context-items)))
-    (cl-remove-if-not #'identity
-                      (mapcar (lambda (name)
-                                (or (get-buffer name)
-                                    (find-buffer-visiting name)))
-                              buffer-names))))
-
 (defun ai-org-chat-modify-buffers ()
   "Modify buffers using an auxiliary LLM.
 Directions for doing so comes from current subtree's content.  This

@@ -261,7 +261,7 @@ FUNC is the llm-function-call object."
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
 (defun ai-org-chat-respond ()
-  "Insert response from llm after current heading in org buffer."
+  "Insert response from AI after current heading in org buffer."
   (interactive)
   (let* ((system ai-org-chat-system-message)
          (context (ai-org-chat--context))
@@ -674,7 +674,7 @@ ones."
                        t t)))))
 
 (defun ai-org-chat-replace-backticks-with-equal-signs ()
-  "Interactively replace backtick-quoted text with org-mode style inline code formatting."
+  "Replace markdown backtick quotes with `org-mode' verbatim quotes."
   (interactive)
   (query-replace-regexp "`\\([^`]+\\)`" "=\\1="))
 
@@ -684,10 +684,8 @@ ones."
 (declare-function ace-window "ace-window")
 
 (defun ai-org-chat--single-defun-p ()
-  "Check if the current buffer contains a single function or variable definition.
-This function uses `beginning-of-defun' to efficiently determine if there's
-only one definition starting at the beginning of the buffer and extending
-to its end. Returns non-nil if a single definition is found, nil otherwise."
+  "Check if the current buffer contains a single defun.
+Returns non-nil if a single defun is found, nil otherwise."
   (save-excursion
     (goto-char (point-max))
     (beginning-of-defun)
@@ -733,7 +731,7 @@ Returns nil if no definition is found or if imenu is unavailable."
   "Flatten the imenu INDEX into a single list of items.
 
 Each item in the returned list is a cons cell of the form:
-(TYPE . (NAME . POSITION))
+ (TYPE . (NAME . POSITION))
 
 where:
 - TYPE is a string representing the hierarchy (e.g., \"Functions/Helpers\")
@@ -835,15 +833,15 @@ This function handles:
                     (tab-bar-close-tab))
                   nil t)))))
 
-(defun ai-org-chat--compare-impl (src-buf auxiliary-buffers language)
-  "Implement comparison logic for SRC-BUF against auxiliary buffers.
+(defun ai-org-chat--compare-impl (src-buf aux-bufs)
+  "Implement comparison logic for SRC-BUF against AUX-BUFS.
 SRC-BUF is the buffer containing the source code to be compared.
-AUXILIARY-BUFFERS is a list of auxiliary buffers to search for matching definitions.
+AUX-BUFS is a list of auxiliary buffers to search for matching definitions.
 LANGUAGE is the programming language of the source code (currently unused).
 
 This function:
 1. Checks if SRC-BUF contains a single definition
-2. If so, tries to find a matching definition in AUXILIARY-BUFFERS
+2. If so, tries to find a matching definition in AUX-BUFS
 3. Sets up an ediff session for the matched definitions or whole buffers
 4. Handles window management for the comparison"
   (with-current-buffer src-buf
@@ -855,7 +853,7 @@ This function:
                                     signature
                                     (seq-remove
                                      (lambda (buf) (eq src-buf buf))
-                                     auxiliary-buffers))))
+                                     aux-bufs))))
           (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
                                     (list (nth 1 matching-info)
                                           (nth 2 matching-info)))
@@ -870,18 +868,29 @@ This function:
           (let ((buf1 (current-buffer)))
             (ai-org-chat--setup-ediff buf1 src-buf)))))))
 
+(defun ai-org-chat--get-context-buffers ()
+  "Get list of buffers specified in CONTEXT properties."
+  (let ((buffer-names (ai-org-chat--get-permanent-context-items)))
+    (cl-remove-if-not #'identity
+                      (mapcar (lambda (name)
+                                (or (get-buffer name)
+                                    (find-buffer-visiting name)))
+                              buffer-names))))
+
+(declare-function org-element-type "org")
+
 ;;;###autoload
 (defun ai-org-chat-compare ()
   "Compare a source block with a selected window using ediff.
-If the source block is a single function or class definition, it tries to find a matching
-definition in other visible buffers and compares them directly."
+If the source block is a single function or class definition, it tries
+to find a matching definition in other visible buffers and compares them
+directly."
   (interactive)
   (let* ((element (org-element-at-point))
-         (type (org-element-type element))
-         (language (org-element-property :language element)))
+         (type (org-element-type element)))
     (when (eq type 'src-block)
       (let ((org-src-window-setup 'current-window)
-            (auxiliary-buffers
+            (aux-bufs
              (let ((visible-buffers (mapcar #'window-buffer
                                             (seq-remove
                                              (lambda (window)
@@ -893,7 +902,7 @@ definition in other visible buffers and compares them directly."
             (progn
               (tab-duplicate)
               (org-edit-special)
-              (ai-org-chat--compare-impl (current-buffer) auxiliary-buffers language))
+              (ai-org-chat--compare-impl (current-buffer) aux-bufs))
           (error
            (tab-bar-close-tab)
            (signal (car err) (cdr err))))))))
