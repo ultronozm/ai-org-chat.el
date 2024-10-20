@@ -330,7 +330,7 @@ SYSTEM-CONTEXT is the system message with context."
                                         (ai-org-chat--wrap-function
                                          (symbol-value (intern tool-symbol))
                                          point))
-                                      (org-entry-get-multivalued-property (point) "TOOLS")))))
+                                      (ai-org-chat--get-tools)))))
       (ai-org-chat--call-with-functions
        ai-org-chat-provider
        prompt
@@ -502,6 +502,19 @@ Uses current and ancestor nodes."
         (while not-done
           (let ((context
                  (org-entry-get-multivalued-property (point) "CONTEXT")))
+            (when context
+              (setq items (append items context))))
+          (setq not-done (org-up-heading-safe)))))
+    (delete-dups items)))
+
+(defun ai-org-chat--get-tools ()
+  "Get list of tools specified for current and ancestor nodes."
+  (let ((items (org-entry-get-multivalued-property (point-min) "TOOLS")))
+    (save-excursion
+      (let ((not-done t))
+        (while not-done
+          (let ((context
+                 (org-entry-get-multivalued-property (point) "TOOLS")))
             (when context
               (setq items (append items context))))
           (setq not-done (org-up-heading-safe)))))
