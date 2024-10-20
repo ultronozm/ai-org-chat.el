@@ -920,26 +920,34 @@ This function handles:
                   nil t)))))
 
 (defun ai-org-chat--compare-impl (src-buf aux-bufs)
-  "Implement comparison logic for SRC-BUF against AUX-BUFS.
+  "Implement comparison logic for SRC-BUF against AUX-BUFS and visible buffers.
 SRC-BUF is the buffer containing the source code to be compared.
 AUX-BUFS is a list of auxiliary buffers to search for matching definitions.
-LANGUAGE is the programming language of the source code (currently unused).
 
 This function:
 1. Checks if SRC-BUF contains a single definition
-2. If so, tries to find a matching definition in AUX-BUFS
+2. If so, tries to find a matching definition in AUX-BUFS and visible buffers
 3. Sets up an ediff session for the matched definitions or whole buffers
 4. Handles window management for the comparison"
   (with-current-buffer src-buf
     (goto-char (point-min))
-    (let ((comparison-set-up nil))
+    (let ((comparison-set-up nil)
+          (visible-buffers (seq-uniq
+                            (mapcar #'window-buffer
+                                    (seq-remove
+                                     (lambda (window)
+                                       (eq (window-buffer window) src-buf))
+                                     (window-list))))))
       (when (ai-org-chat--single-defun-p)
         (when-let* ((signature (ai-org-chat--extract-defun-signature))
                     (matching-info (ai-org-chat--find-matching-defun
                                     signature
-                                    (seq-remove
-                                     (lambda (buf) (eq src-buf buf))
-                                     aux-bufs))))
+                                    (seq-uniq
+                                     (append
+                                      (seq-remove
+                                       (lambda (buf) (eq src-buf buf))
+                                       aux-bufs)
+                                      visible-buffers)))))
           (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
                                     (list (nth 1 matching-info)
                                           (nth 2 matching-info)))
@@ -947,12 +955,20 @@ This function:
 
       (unless comparison-set-up
         (require 'ace-window)
-        (let ((ai-window (selected-window)))
-          (when (> (count-windows) 2)
-            (call-interactively #'ace-window))
-          (delete-window ai-window)
-          (let ((buf1 (current-buffer)))
-            (ai-org-chat--setup-ediff buf1 src-buf)))))))
+        (let* ((all-candidate-buffers (seq-uniq (append visible-buffers aux-bufs)))
+               (buf-to-compare
+                (if (= (length all-candidate-buffers) 1)
+                    (car all-candidate-buffers)
+                  (if (> (length visible-buffers) 0)
+                      (if (> (length visible-buffers) 1)
+                          (window-buffer
+                           (aw-select "Select window for comparison"))
+                        (car visible-buffers))
+                    (get-buffer
+                     (completing-read "Select buffer to compare: "
+                                      (mapcar #'buffer-name all-candidate-buffers)
+                                      nil t))))))
+          (ai-org-chat--setup-ediff buf-to-compare src-buf))))))
 
 (defun ai-org-chat--get-context-buffers ()
   "Get list of buffers specified in CONTEXT properties."
@@ -974,16 +990,9 @@ directly."
   (interactive)
   (let* ((element (org-element-at-point))
          (type (org-element-type element)))
-    (when (eq type 'src-block)
+    (when (memq type '(src-block example-block))
       (let ((org-src-window-setup 'current-window)
-            (aux-bufs
-             (let ((visible-buffers (mapcar #'window-buffer
-                                            (seq-remove
-                                             (lambda (window)
-                                               (eq (window-buffer window) (current-buffer)))
-                                             (window-list))))
-                   (context-buffers (ai-org-chat--get-context-buffers)))
-               (delete-dups (append visible-buffers context-buffers)))))
+            (aux-bufs (ai-org-chat--get-context-buffers)))
         (condition-case err
             (progn
               (tab-duplicate)
