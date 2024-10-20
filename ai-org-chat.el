@@ -1001,6 +1001,74 @@ directly."
            (tab-bar-close-tab)
            (signal (car err) (cdr err))))))))
 
+;;; Model selection convenience functions
+
+(defcustom ai-org-chat-models
+  '(("sonnet 3.5" .
+     (:provider make-llm-claude
+                :key-env "ANTHROPIC_KEY"
+                :chat-model "claude-3-5-sonnet-20240620"))
+    ("gpt4" .
+     (:provider make-llm-openai
+                :key-env "OPENAI_KEY"
+                :chat-model "gpt-4"))
+    ("gpt4o" .
+     (:provider make-llm-openai
+                :key-env "OPENAI_KEY"
+                :chat-model "gpt-4o-2024-08-06"))
+    ("gpt4o-mini" .
+     (:provider make-llm-openai
+                :key-env "OPENAI_KEY"
+                :chat-model "gpt-4o-mini"))
+    ("opus 3" .
+     (:provider make-llm-claude
+                :key-env "ANTHROPIC_KEY"
+                :chat-model "claude-3-opus-20240229"))
+    ("gemini" .
+     (:provider make-llm-gemini
+                :key-env "GEMINI_KEY"
+                :chat-model "gemini-1.5-pro-latest"))
+    ("llama 3.1" .
+     (:provider make-llm-ollama
+                :chat-model "llama3.1:latest"))
+    ("mistral" .
+     (:provider make-llm-ollama
+                :chat-model "mistral:latest")))
+  "Alist of LLM models and their configurations for ai-org-chat.
+Each entry is of the form (NAME . PLIST) where NAME is a string
+identifying the model, and PLIST is a property list with the following keys:
+:provider - The function to create the LLM provider
+:key-env - The environment variable name for the API key (optional)
+:chat-model - The specific model name to use with the provider"
+  :type '(alist :key-type string
+                :value-type (plist :key-type symbol :value-type sexp))
+  :group 'ai-org-chat)
+
+(defcustom ai-org-chat-default-model "sonnet 3.5"
+  "The default LLM model to use for ai-org-chat.
+This should be one of the keys in `ai-org-chat-models'."
+  :type 'string
+  :group 'ai-org-chat)
+
+;;;###autoload
+(defun ai-org-chat-select-model (model)
+  "Select and configure an LLM model for ai-org-chat.
+MODEL is a string key from `ai-org-chat-models'."
+  (interactive
+   (list (completing-read "Select LLM model: "
+                          (mapcar #'car ai-org-chat-models))))
+  (let* ((config (alist-get model ai-org-chat-models nil nil #'string=))
+         (provider (plist-get config :provider))
+         (key-env (plist-get config :key-env))
+         (chat-model (plist-get config :chat-model)))
+    (setq ai-org-chat-provider
+          (if key-env
+              (funcall provider
+                       :chat-model chat-model
+                       :key (getenv key-env))
+            (funcall provider
+                     :chat-model chat-model)))
+    (message "Selected model for ai-org-chat: %s" model)))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
