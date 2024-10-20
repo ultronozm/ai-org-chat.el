@@ -5,7 +5,7 @@
 ;; Author: Paul D. Nelson <nelson.paul.david@gmail.com>
 ;; Version: 0.1
 ;; URL: https://github.com/ultronozm/ai-org-chat.el
-;; Package-Requires: ((emacs "29.1") (llm "0.17.0"))
+;; Package-Requires: ((emacs "29.1") (llm "0.17.0") (ace-window "0.10.0"))
 ;; Keywords: convenience, ai, chat
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -427,11 +427,13 @@ into that buffer, applying the filters in the variable
 If a region is selected, its contents are copied into a new buffer
 within an appropriate source block.  Otherwise, creates an empty buffer.
 
-The new buffer is created with a timestamped filename in `ai-org-chat-dir',
-and set up with `org-mode' and `ai-org-chat-minor-mode' enabled.
+The new buffer is created with a timestamped filename in
+`ai-org-chat-dir', and set up with `org-mode' and
+`ai-org-chat-minor-mode' enabled.
 
-With prefix argument ARG, immediately call `ai-org-chat-add-visible-buffers-context'
-on the new file, with point positioned at the top of the document."
+With prefix argument ARG, immediately call
+`ai-org-chat-add-visible-buffers-context' on the new file, with point
+positioned at the top of the document."
   (interactive "P")
   (let ((original-buffer (current-buffer)))
     (if (region-active-p)
@@ -757,7 +759,6 @@ ones."
 ;;; Comparison
 
 (declare-function ediff-cleanup-mess "ediff")
-(declare-function ace-window "ace-window")
 
 (defun ai-org-chat--single-defun-p ()
   "Check if the current buffer contains a single defun.
@@ -772,23 +773,26 @@ Returns non-nil if a single defun is found, nil otherwise."
 
 (defun ai-org-chat--search-imenu-alist (alist pos)
   "Search the imenu ALIST for item closest to but not after POS.
-Returns a cons cell (TYPE . NAME) where TYPE is the imenu type and
-NAME is the function or variable name. Returns nil if no item is found."
+Return a cons cell (TYPE . NAME) where TYPE is the imenu type and NAME
+is the function or variable name.  Return nil if no item is found."
   (let ((found-item nil)
         (found-type nil))
-    (cl-labels ((search-alist
-                  (alist current-type)
-                  (cl-loop for item in alist
-                           do (cond
-                               ((and (consp item) (consp (cdr item)) (not (numberp (cdr item))))
-                                (let ((result (search-alist (cdr item) (car item))))
-                                  (when result (cl-return result))))
-                               ((and (consp item) (number-or-marker-p (cdr item))
-                                     (<= (cdr item) pos)
-                                     (or (null found-item)
-                                         (> (cdr item) (cdr found-item))))
-                                (setq found-item item
-                                      found-type current-type))))))
+    (cl-labels
+        ((search-alist
+           (alist current-type)
+           (cl-loop for item in alist
+                    do (cond
+                        ((and (consp item)
+                              (consp (cdr item))
+                              (not (numberp (cdr item))))
+                         (let ((result (search-alist (cdr item) (car item))))
+                           (when result (cl-return result))))
+                        ((and (consp item) (number-or-marker-p (cdr item))
+                              (<= (cdr item) pos)
+                              (or (null found-item)
+                                  (> (cdr item) (cdr found-item))))
+                         (setq found-item item
+                               found-type current-type))))))
       (search-alist alist nil))
     (when found-item
       (cons found-type (car found-item)))))
@@ -918,6 +922,8 @@ This function handles:
                     (tab-bar-close-tab))
                   nil t)))))
 
+(require 'ace-window)
+
 (defun ai-org-chat--compare-impl (src-buf aux-bufs)
   "Implement comparison logic for SRC-BUF against AUX-BUFS and visible buffers.
 SRC-BUF is the buffer containing the source code to be compared.
@@ -953,7 +959,6 @@ This function:
           (setq comparison-set-up t)))
 
       (unless comparison-set-up
-        (require 'ace-window)
         (let* ((all-candidate-buffers (seq-uniq (append visible-buffers aux-bufs)))
                (buf-to-compare
                 (if (= (length all-candidate-buffers) 1)
