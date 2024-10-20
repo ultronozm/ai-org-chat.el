@@ -20,25 +20,8 @@ The PROPERTIES drawers are used to provide
 
 There is support for quickly launching Ediff sessions that compare modifications suggested by the AI to their sources, making it easier to review and apply changes (see [[Compare Feature]]).
 
-The "plumbing" concerning API calls is outsourced to either the [[https://github.com/karthink/gptel][gptel]] or [[https://github.com/ahyatt/llm][llm]] library, which require the user to provide an API key.  By customizing the variable =ai-org-chat-request-fn=, any other backend library could be used.
-
 * Configuration
-This package depends (by default) upon [[https://github.com/karthink/gptel][gptel]], so you should first set that up and configure it.  The following configuration works for me on MacOS after setting the environment variable "OPENAI_API_KEY" to my API key.
-
-#+begin_src elisp
-(use-package exec-path-from-shell
-  :ensure
-  :init
-  (exec-path-from-shell-initialize))
-  
-(use-package gptel
-  :ensure
-  :after exec-path-from-shell
-  :config
-  (setq gptel-api-key (exec-path-from-shell-getenv "OPENAI_API_KEY")))
-#+end_src
-
-Next, download this repository, install using =M-x package-install-file= (or package-vc-install, straight, elpaca, ...), and add =(use-package ai-org-chat)= to your [[https://www.emacswiki.org/emacs/InitFile][init file]].  For a slightly more elaborate configuration, use something like the following:
+Download this repository, install using =M-x package-install-file= (or package-vc-install, straight, elpaca, ...), and add =(use-package ai-org-chat)= to your [[https://www.emacswiki.org/emacs/InitFile][init file]].  For a more comprehensive setup, use something like the following:
 
 #+begin_src elisp
 (use-package ai-org-chat
@@ -53,7 +36,26 @@ Next, download this repository, install using =M-x package-install-file= (or pac
   :custom
   (ai-org-chat-user-name "Paul")
   (ai-org-chat-dir "~/gpt")
-  (ai-org-chat-context-style nil))
+  (ai-org-chat-context-style nil)
+  :config
+  ;; See below
+  ;; (ai-org-chat-select-model "sonnet 3.5")
+  )
+#+end_src
+
+To use the package, you'll need to set up either the [[https://github.com/karthink/gptel][gptel]] or [[https://github.com/ahyatt/llm][llm]] library.  By default, =ai-org-chat= works with =gptel=, so if you have that configured already, you're all set.  However, features related to "tools" or "function calls" are currently only supported by the =llm= library, making it the recommended option for full functionality.
+
+If you choose to use =llm=, you'll need to configure the =ai-org-chat-provider= variable with a valid provider as defined by the =llm= library.  Here's how to do that:
+
+1. Customize the =ai-org-chat-models= user option to include the models you want to use and the environment variables containing your API keys.
+2. Use the =ai-org-chat-select-model= command to choose your preferred model. You can do this by uncommenting and adjusting the line at the bottom of the above =use-package= declaration.
+
+As a final tip, the following makes environment variables available in Emacs on MacOS:
+#+begin_src elisp
+(use-package exec-path-from-shell
+  :ensure
+  :init
+  (exec-path-from-shell-initialize))
 #+end_src
 
 * Usage
@@ -95,7 +97,7 @@ The =ai-org-chat-context-style= variable determines how visible buffer contents 
 
 ** Tools
 
-Tools are specified using the =TOOLS= property.  This property should contain a list of =llm= function symbols that the AI can use.
+Tools (or "function calls") are specified using the =TOOLS= property.  This property should contain a list of =llm= function symbols that the AI can use.  This feature works only if the variable =ai-org-chat-provider= is set to a provider for the =llm= package that supports tools.
 
 Example:
 #+begin_example
@@ -119,11 +121,7 @@ These commands are designed to simplify context/tool management, but are not req
 
 * Compare Feature
 
-The "compare" feature streamlines the process of reviewing and applying code changes suggested by the AI.
-
-** How it works
-
-When the AI suggests changes to a function or code block in your project, you can use this feature to quickly compare the suggestion with the original code, as follows.
+The "compare" feature streamlines the process of reviewing and applying code changes suggested by the AI, as follows.
 
 1. Narrow the buffer containing your original code to the function or section of interest.
 2. In the AI chat buffer, place your cursor on the AI-suggested code block.
@@ -131,17 +129,6 @@ When the AI suggests changes to a function or code block in your project, you ca
 4. If you have multiple visible windows, you'll be prompted to select the window containing the original code using ace-window.
 5. An Ediff session will launch in a new tab, comparing the AI-suggested code with your original code.
 
-** Benefits
+The Ediff session is launched in a new tab and cleaned up automatically when you're done, keeping your workspace tidy.
 
-- Side-by-side comparison: Easily see the differences between your current code and the AI's suggestion.
-- Interactive review: Use Ediff's features to navigate and understand the changes.
-- Easy application: Apply changes directly from the Ediff session if desired.
-- Temporary setup: The Ediff session is launched in a new tab and cleaned up automatically when you're done, keeping your workspace tidy.
-
-** Usage Tips
-
-- This feature works best when you narrow your original code buffer to the relevant function or section before invoking the compare command.  This ensures a focused comparison.
-- You can use Ediff's built-in commands to navigate differences, copy changes from one side to the other, or even edit the buffers directly.
-- When you're done reviewing, simply exit the Ediff session.  The temporary buffers and tab will be cleaned up automatically.
-
-By leveraging this feature, you can significantly speed up the process of reviewing and incorporating AI-suggested code changes, making your workflow with ai-org-chat more efficient and effective.
+As a shortcut, the first step (narrowing the buffer) is not necessary if the code block consists of a single function -- in that case, narrowing should be taken care of automatically provided that the relevant buffer is either visible or appears in the context.
