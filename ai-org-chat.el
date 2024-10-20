@@ -1070,7 +1070,10 @@ MODEL is a string key from `ai-org-chat-models'."
           (if key-env
               (funcall provider
                        :chat-model chat-model
-                       :key (getenv key-env))
+                       :key
+                       (if (fboundp 'exec-path-from-shell-getenv)
+                           (exec-path-from-shell-getenv key-env)
+                         (getenv key-env)))
             (funcall provider
                      :chat-model chat-model)))
     (message "Selected model for ai-org-chat: %s" model)))
