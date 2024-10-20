@@ -20,7 +20,7 @@
 
 ;;; Commentary:
 
-;; 
+;; experimental work in progress (but not really)
 
 ;;; Code:
 
