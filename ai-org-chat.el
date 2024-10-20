@@ -383,7 +383,7 @@ came.  It should return the processed string."
       content
     (concat content "\n")))
 
-(defcustom ai-org-chat-modes-for-src-blocks '(tex-mode latex-mode LaTeX-mode)
+(defcustom ai-org-chat-modes-for-src-blocks '(tex-mode latex-mode LaTeX-mode Texinfo-mode)
   "List of modes for which to use src blocks."
   :type '(repeat symbol))
 
