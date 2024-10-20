@@ -68,7 +68,7 @@ When quoting source blocks, DON'T USE MARKDOWN SYNTAX, but instead use Emacs org
   (number-sequence 0 9)
 #+end_src
 
-Similarly, when mentioning keywords, DON'T use markdown syntax like `keyword`, but instead org-mode syntax like =keyword=.
+Similarly, DON'T use markdown syntax like `keyword`, but instead org-mode syntax like =keyword=.
 
 You can directly affect the user's computing environment by requesting that the user execute elisp or sh source blocks.
 
