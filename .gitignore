@@ -11,3 +11,9 @@
 *.~undo-tree
 /*.html
 .aider*
+
+ai.org
+
+*.diff
+
+*.txt
