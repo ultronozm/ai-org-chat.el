@@ -42,15 +42,14 @@
   "Threaded chat with AI agent in org buffers."
   :group 'hypermedia)
 
-(defcustom ai-org-chat-provider nil
+(defvar ai-org-chat-provider 'gptel
   "The LLM provider to use for AI chat.
 This should be either
 
-- an instance of an LLM provider created using the `llm'
-package (e.g., via `make-llm-openai'), or
+- the symbol `gptel', or
 
-- the symbol `gptel'."
-  :type 'symbol)
+- an instance of an LLM provider created using the `llm' package (e.g.,
+via `make-llm-openai').")
 
 (defcustom ai-org-chat-user-name "User"
   "User name to insert into buffer."
