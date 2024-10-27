@@ -1012,7 +1012,7 @@ directly."
   '(("sonnet 3.5" .
      (:provider make-llm-claude
                 :key-env "ANTHROPIC_KEY"
-                :chat-model "claude-3-5-sonnet-20240620"))
+                :chat-model "claude-3-5-sonnet-20241022"))
     ("gpt4" .
      (:provider make-llm-openai
                 :key-env "OPENAI_KEY"
