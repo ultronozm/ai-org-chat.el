@@ -70,7 +70,7 @@ We provide the following commands:
 
 - =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
 - =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
-- =ai-org-chat-compare= (=C-c e=) :: This launches an Ediff session, comparing the org-mode block at point (typically containing AI-suggested code) with the contents of another visible buffer. This feature is critical for efficiently reviewing and applying AI-suggested changes to your codebase. See [[Compare Feature]] for more details.
+- =ai-org-chat-compare= (=C-c e=) :: Launches an Ediff session to compare the org-mode block at point with the contents of another visible buffer.  This helps you review and apply AI-suggested changes to your codebase.  See [[Compare Feature]] for more details.
 - =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks between (point) and (point-max) to org-mode code blocks.
 
 * Context and Tools
@@ -129,5 +129,17 @@ The "compare" feature streamlines the process of reviewing and applying code cha
 5. An Ediff session will launch in a new tab, comparing the AI-suggested code with your original code.
 
 The Ediff session is launched in a new tab and cleaned up automatically when you're done, keeping your workspace tidy.
+
+** Workflow for revising part of a buffer
+There are many ways to do this.  Here's one typical workflow:
+1. Create a buffer containing the region that you want to modify, either immediately via =C-x n n= (=narrow-to-region=) or after first doing =M-x clone-indirect-buffer= (which I bind to =C-x c=).
+2. =C-x t 2= (=tab-bar-new-tab=) to create a new tab containing just the buffer containing the region of interest, then =C-u C-c /= (or =C-u M-x ai-org-chat-new=) to launch a chat session with the buffer of interest as context.
+3. Ask the LLM to revise it, requesting the response in a source block (a good system message, or the function =ai-org-chat-convert-markdown-blocks-to-org=, maybe come in handy here).
+4. When you receive a response in a source block, use =C-c e= (=ai-org-chat-compare=) to inspect what was changed, and standard Ediff commands to apply parts of that change.
+5. Iterate until you're happy with the changes.
+
+The point here is that this is a very flexible workflow that leverages built-in features such as narrowing and Ediff.
+
+** Shortcut for individual functions
 
 As a shortcut, the first step (narrowing the buffer) is not necessary if the code block consists of a single function -- in that case, narrowing should be taken care of automatically provided that the relevant buffer is either visible or appears in the context.
