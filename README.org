@@ -32,7 +32,6 @@ Download this repository, install using =M-x package-install-file= (or package-v
         ("C-c <return>" . ai-org-chat-respond)
         ("C-c n" . ai-org-chat-branch)
         ("C-c e" . ai-org-chat-compare))
-  :commands (ai-org-chat-setup-buffer)
   :custom
   (ai-org-chat-user-name "Paul")
   (ai-org-chat-dir "~/gpt")
