@@ -859,8 +859,10 @@ Returns a list (BUFFER START END) if a match is found, where:
 Returns nil if no match is found."
   (with-current-buffer buffer
     (imenu-flush-cache)
-    (let ((index-alist
-           (ai-org-chat--flatten-imenu-index (imenu--make-index-alist))))
+    (when-let ((index-alist
+                (condition-case nil
+                    (ai-org-chat--flatten-imenu-index (imenu--make-index-alist))
+                  (imenu-unavailable nil))))
       (cl-loop for item in index-alist
                when (and (equal (car item) (car signature))
                          (equal (cadr item) (cdr signature)))
