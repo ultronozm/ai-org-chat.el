@@ -737,20 +737,28 @@ ones."
       (insert (concat ai-org-chat-user-name))
       (insert "\n"))))
 
-
+;;;###autoload
 (defun ai-org-chat-convert-markdown-blocks-to-org ()
   "Convert Markdown style code blocks in current buffer to org."
   (interactive)
   (save-excursion
     (while (re-search-forward
-            "```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)```" nil t)
-      (let ((lang (match-string 1))
-            (code (match-string 3)))
-        (replace-match (format "#+begin_src %s\n%s\n#+end_src"
+            "^\\([ \t]*\\)```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)\\1```" nil t)
+      (let ((indent (match-string 1))
+            (lang (match-string 2))
+            (code (match-string 4)))
+        (replace-match (format "%s#+begin_src %s\n%s%s\n%s#+end_src"
+                               indent
                                (or lang "")
-                               (string-trim-right code))
+                               indent
+                               (replace-regexp-in-string
+                                (format "^%s" indent)
+                                indent
+                                (string-trim-right code))
+                               indent)
                        t t)))))
 
+;;;###autoload
 (defun ai-org-chat-replace-backticks-with-equal-signs ()
   "Replace markdown backtick quotes with `org-mode' verbatim quotes."
   (interactive)
