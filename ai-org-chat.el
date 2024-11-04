@@ -1020,35 +1020,43 @@ directly."
 
 (defcustom ai-org-chat-models
   '(("sonnet 3.5" .
-     (:provider make-llm-claude
-                :key-env "ANTHROPIC_KEY"
-                :chat-model "claude-3-5-sonnet-20241022"))
+     (:package llm-claude
+               :provider make-llm-claude
+               :key-env "ANTHROPIC_KEY"
+               :chat-model "claude-3-5-sonnet-20241022"))
     ("gpt4" .
-     (:provider make-llm-openai
-                :key-env "OPENAI_KEY"
-                :chat-model "gpt-4"))
+     (:package llm-openai
+               :provider make-llm-openai
+               :key-env "OPENAI_KEY"
+               :chat-model "gpt-4"))
     ("gpt4o" .
-     (:provider make-llm-openai
-                :key-env "OPENAI_KEY"
-                :chat-model "gpt-4o-2024-08-06"))
+     (:package llm-openai
+               :provider make-llm-openai
+               :key-env "OPENAI_KEY"
+               :chat-model "gpt-4o-2024-08-06"))
     ("gpt4o-mini" .
-     (:provider make-llm-openai
-                :key-env "OPENAI_KEY"
-                :chat-model "gpt-4o-mini"))
+     (:package llm-openai
+               :provider make-llm-openai
+               :key-env "OPENAI_KEY"
+               :chat-model "gpt-4o-mini"))
     ("opus 3" .
-     (:provider make-llm-claude
-                :key-env "ANTHROPIC_KEY"
-                :chat-model "claude-3-opus-20240229"))
+     (:package llm-claude
+               :provider make-llm-claude
+               :key-env "ANTHROPIC_KEY"
+               :chat-model "claude-3-opus-20240229"))
     ("gemini" .
-     (:provider make-llm-gemini
-                :key-env "GEMINI_KEY"
-                :chat-model "gemini-1.5-pro-latest"))
+     (:package llm-gemini
+               :provider make-llm-gemini
+               :key-env "GEMINI_KEY"
+               :chat-model "gemini-1.5-pro-latest"))
     ("llama 3.1" .
-     (:provider make-llm-ollama
-                :chat-model "llama3.1:latest"))
+     (:package llm-ollama
+               :provider make-llm-ollama
+               :chat-model "llama3.1:latest"))
     ("mistral" .
-     (:provider make-llm-ollama
-                :chat-model "mistral:latest")))
+     (:package llm-ollama
+               :provider make-llm-ollama
+               :chat-model "mistral:latest")))
   "Alist of LLM models and their configurations for ai-org-chat.
 Each entry is of the form (NAME . PLIST) where NAME is a string
 identifying the model, and PLIST is a property list with the following keys:
@@ -1056,14 +1064,12 @@ identifying the model, and PLIST is a property list with the following keys:
 :key-env - The environment variable name for the API key (optional)
 :chat-model - The specific model name to use with the provider"
   :type '(alist :key-type string
-                :value-type (plist :key-type symbol :value-type sexp))
-  :group 'ai-org-chat)
+                :value-type (plist :key-type symbol :value-type sexp)))
 
 (defcustom ai-org-chat-default-model "sonnet 3.5"
   "The default LLM model to use for ai-org-chat.
 This should be one of the keys in `ai-org-chat-models'."
-  :type 'string
-  :group 'ai-org-chat)
+  :type 'string)
 
 ;;;###autoload
 (defun ai-org-chat-select-model (model)
@@ -1073,20 +1079,23 @@ MODEL is a string key from `ai-org-chat-models'."
    (list (completing-read "Select LLM model: "
                           (mapcar #'car ai-org-chat-models))))
   (let* ((config (alist-get model ai-org-chat-models nil nil #'string=))
+         (package (plist-get config :package))
          (provider (plist-get config :provider))
          (key-env (plist-get config :key-env))
          (chat-model (plist-get config :chat-model)))
-    (setq ai-org-chat-provider
-          (if key-env
+    (if (not (require package nil t))
+        (user-error "Package %s is not available" package)
+      (setq ai-org-chat-provider
+            (if key-env
+                (funcall provider
+                         :chat-model chat-model
+                         :key
+                         (if (fboundp 'exec-path-from-shell-getenv)
+                             (exec-path-from-shell-getenv key-env)
+                           (getenv key-env)))
               (funcall provider
-                       :chat-model chat-model
-                       :key
-                       (if (fboundp 'exec-path-from-shell-getenv)
-                           (exec-path-from-shell-getenv key-env)
-                         (getenv key-env)))
-            (funcall provider
-                     :chat-model chat-model)))
-    (message "Selected model for ai-org-chat: %s" model)))
+                       :chat-model chat-model)))
+      (message "Selected model for ai-org-chat: %s" model))))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
