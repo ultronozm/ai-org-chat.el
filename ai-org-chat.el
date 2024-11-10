@@ -82,15 +82,7 @@ Use double spaces between sentences (an Emacs convention).
   "Directory for storing files created by `ai-org-chat-new'."
   :type 'string)
 
-;;;###autoload
-(define-minor-mode ai-org-chat-minor-mode
-  "Toggle `ai-org-chat-minor-mode'.
-With no argument, this command toggles the mode.
-Non-null prefix argument turns on the mode.
-Null prefix argument turns off the mode."
-  :lighter nil
-  :keymap (let ((map (make-sparse-keymap)))
-            map))
+(defvar ai-org-chat-minor-mode)
 
 (defconst ai-org-chat-local-variables
   "# -*- eval: (ai-org-chat-minor-mode 1); -*-
@@ -1096,6 +1088,58 @@ MODEL is a string key from `ai-org-chat-models'."
               (funcall provider
                        :chat-model chat-model)))
       (message "Selected model for ai-org-chat: %s" model))))
+
+;;; Menu
+
+(defvar ai-org-chat-mode-menu nil
+  "Menu for `ai-org-chat-minor-mode'.")
+
+(easy-menu-define ai-org-chat-mode-menu nil
+  "Menu for `ai-org-chat-minor-mode'."
+  (list "AI Chat"
+        ["New Chat" ai-org-chat-new
+         :help "Start a new AI chat buffer"]
+        ["Branch Conversation" ai-org-chat-branch
+         :help "Create a new branch in the conversation"]
+        ["Get Response" ai-org-chat-respond
+         :help "Get AI response for current entry"]
+        ["Compare Source Block" ai-org-chat-compare
+         :help "Compare a source block with a selected window using ediff"]
+        ["Select Model" ai-org-chat-select-model
+         :help "Select and configure an LLM model"]
+        "-"
+        (list "Context"
+              ["Add Buffer Context" ai-org-chat-add-buffer-context
+               :help "Add selected buffers as context"]
+              ["Add Visible Buffers Context" ai-org-chat-add-visible-buffers-context
+               :help "Add all visible buffers as context"]
+              ["Add File Context" ai-org-chat-add-file-context
+               :help "Add selected files as context"]
+              ["Add Project Files Context" ai-org-chat-add-project-files-context
+               :help "Add files from a project as context"]
+              ["Set Context Style" ai-org-chat-set-context-style
+               :help "Set the context style as a file-local variable"])
+        (list "Format"
+              ["Convert Markdown Blocks" ai-org-chat-convert-markdown-blocks-to-org
+               :help "Convert Markdown style code blocks to org"]
+              ["Replace Backticks" ai-org-chat-replace-backticks-with-equal-signs
+               :help "Replace markdown backticks with org-mode verbatim quotes"])))
+
+(defvar ai-org-chat-minor-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [menu-bar ai-chat] (cons "AI Chat" ai-org-chat-mode-menu))
+    map)
+  "Keymap for `ai-org-chat-minor-mode'.")
+
+;;;###autoload
+(define-minor-mode ai-org-chat-minor-mode
+  "Toggle `ai-org-chat-minor-mode'.
+With no argument, this command toggles the mode.
+Non-null prefix argument turns on the mode.
+Null prefix argument turns off the mode."
+  :lighter " AI-Chat"
+  :keymap ai-org-chat-minor-mode-map)
+
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
