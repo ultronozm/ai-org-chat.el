@@ -1016,6 +1016,11 @@ directly."
                :provider make-llm-claude
                :key-env "ANTHROPIC_KEY"
                :chat-model "claude-3-5-sonnet-20241022"))
+    ("haiku 3.5" .
+     (:package llm-claude
+               :provider make-llm-claude
+               :key-env "ANTHROPIC_KEY"
+               :chat-model "claude-3-5-haiku-latest"))
     ("gpt4" .
      (:package llm-openai
                :provider make-llm-openai
