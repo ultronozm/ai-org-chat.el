@@ -659,6 +659,20 @@ Excludes current buffer."
           #'completion-file-name-table)))
     (ai-org-chat--add-context selected-files)))
 
+(defun ai-org-chat-add-function-context ()
+  "Add selected function symbols as context for current org node."
+  (interactive)
+  (let* ((function-symbols
+          (completing-read-multiple
+           "Select functions to add to permanent context: "
+           (let (symbols)
+             (mapatoms
+              (lambda (sym)
+                (when (fboundp sym)
+                  (push (symbol-name sym) symbols))))
+             symbols))))
+    (ai-org-chat--add-context function-symbols)))
+
 (require 'project)
 
 (defun ai-org-chat--filter-files-by-wildcard (files wildcard)
@@ -671,6 +685,31 @@ Otherwise, return only files matching the WILDCARD pattern."
       (seq-filter (lambda (file)
                     (string-match-p regexp file))
                   files))))
+
+(defun ai-org-chat-add-directory-files-context (dir &optional wildcard
+                                                    recursive)
+  "Add files from DIR as context for current org node.
+Optional WILDCARD (e.g., \"*.py\") filters files by pattern.
+With prefix arg RECURSIVE, include subdirectories recursively."
+  (interactive
+   (list (read-directory-name "Select directory: ")
+         (read-string "File wildcard (optional, e.g., *.py): " nil nil "*")
+         current-prefix-arg))
+  (let* ((files (directory-files-recursively
+                 dir
+                 (if (or (null wildcard) (string= wildcard "*"))
+                     ".*"
+                   (wildcard-to-regexp wildcard))
+                 recursive))
+         (relative-files
+          (mapcar (lambda (file)
+                    (file-relative-name file default-directory))
+                  files)))
+    (ai-org-chat--add-context relative-files)
+    (message "Added %d files from directory %s as context (wildcard: %s)"
+             (length relative-files)
+             dir
+             wildcard)))
 
 (defun ai-org-chat-add-project-files-context (dir &optional wildcard)
   "Add files from a selected project as context for current org node.
@@ -1120,6 +1159,10 @@ MODEL is a string key from `ai-org-chat-models'."
                :help "Add all visible buffers as context"]
               ["Add File Context" ai-org-chat-add-file-context
                :help "Add selected files as context"]
+              ["Add Function Context" ai-org-chat-add-function-context
+               :help "Add selected function symbols as context"]
+              ["Add Directory Files Context" ai-org-chat-add-directory-files-context
+               :help "Add files from a directory as context"]
               ["Add Project Files Context" ai-org-chat-add-project-files-context
                :help "Add files from a project as context"]
               ["Set Context Style" ai-org-chat-set-context-style
