@@ -1080,11 +1080,16 @@ directly."
                :provider make-llm-claude
                :key-env "ANTHROPIC_KEY"
                :chat-model "claude-3-opus-20240229"))
-    ("gemini" .
+    ("gemini-1.5-pro-latest" .
      (:package llm-gemini
                :provider make-llm-gemini
                :key-env "GEMINI_KEY"
                :chat-model "gemini-1.5-pro-latest"))
+    ("gemini-2.0-flash-exp" .
+     (:package llm-gemini
+               :provider make-llm-gemini
+               :key-env "GEMINI_KEY"
+               :chat-model "gemini-2.0-flash-exp"))
     ("llama 3.1" .
      (:package llm-ollama
                :provider make-llm-ollama
