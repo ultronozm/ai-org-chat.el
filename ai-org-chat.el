@@ -1060,6 +1060,16 @@ directly."
                :provider make-llm-claude
                :key-env "ANTHROPIC_KEY"
                :chat-model "claude-3-5-haiku-latest"))
+    ("o1-preview" .
+     (:package llm-openai
+               :provider make-llm-openai
+               :key-env "OPENAI_KEY"
+               :chat-model "o1-preview"))
+    ("o1-mini" .
+     (:package llm-openai
+               :provider make-llm-openai
+               :key-env "OPENAI_KEY"
+               :chat-model "o1-mini"))
     ("gpt4" .
      (:package llm-openai
                :provider make-llm-openai
