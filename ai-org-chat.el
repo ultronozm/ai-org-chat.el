@@ -719,8 +719,19 @@ to filter the files (e.g., \"*.py\" for Python files)."
   (interactive
    (list (funcall project-prompter)
          (read-string "File wildcard (optional, e.g., *.py): " nil nil "*")))
-  (let ((project (project-current nil dir))
-        (current-file (buffer-file-name)))
+  (let* ((project (project-current nil dir))
+         (current-file (buffer-file-name))
+         (project-vc-include-untracked nil)  ; don't include untracked files
+         (project-ignore-filenames-regexp
+          (concat "\\."
+                  "\\(png\\|jpg\\|jpeg\\|gif\\|bmp\\|tiff\\|ico\\|svg"
+                  "\\|pdf\\|doc\\|docx\\|xls\\|xlsx\\|ppt\\|pptx"
+                  "\\|zip\\|tar\\|gz\\|rar\\|7z"
+                  "\\|exe\\|dll\\|so\\|dylib"
+                  "\\|pyc\\|pyo\\|pyd"
+                  "\\|class\\|jar"
+                  "\\|mp3\\|mp4\\|avi\\|mov\\|wav"
+                  "\\)$")))
     (if (not project)
         (error "No project found for directory %s" dir)
       (let* ((project-files (project-files project))
@@ -729,9 +740,13 @@ to filter the files (e.g., \"*.py\" for Python files)."
                         (file-relative-name file default-directory))
                       project-files))
              (filtered-files
-              (remove (and current-file
-                           (file-relative-name current-file default-directory))
-                      relative-files))
+              (seq-remove
+               (lambda (file)
+                 (or (string-match-p project-ignore-filenames-regexp file)
+                     (and current-file
+                          (string= file (file-relative-name
+                                         current-file default-directory)))))
+               relative-files))
              (final-files
               (ai-org-chat--filter-files-by-wildcard filtered-files wildcard)))
         (ai-org-chat--add-context final-files)
