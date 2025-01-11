@@ -239,38 +239,39 @@ PROVIDER is the LLM service provider."
         (goto-char end)
         (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
-(defun ai-org-chat--insert-function-call (func args)
+(defun ai-org-chat--insert-tool-call (func args)
   "Insert FUNC call with ARGS into the current org buffer."
   (insert "\n:FUNCTION_CALL:\n"
           (json-encode `((name . ,(llm-function-call-name func))
                          (arguments . ,args)))
           "\n:END:\n"))
 
-(defun ai-org-chat--insert-function-result (result)
+(defun ai-org-chat--insert-tool-result (result)
   "Insert RESULT of a function call into the current org buffer."
   (insert "\n:FUNCTION_RESULT:\n"
           (format "%s" result)
           "\n:END:\n\n"))
 
-(defun ai-org-chat--wrap-function (func marker)
-  "Wrap FUNC to log its calls and results in the org buffer at MARKER."
-  (let* ((orig-func (llm-function-call-function func))
+(defun ai-org-chat--create-logging-tool (tool marker)
+  "Create a version of TOOL that logs its calls and results at MARKER.
+TOOL is an llm-function-call object.  Returns a new llm-function-call
+object with logging behavior added."
+  (let* ((orig-func (llm-function-call-function tool))
          (wrapped-func
           (lambda (&rest args)
             (let ((result (apply orig-func args)))
               (with-current-buffer (marker-buffer marker)
                 (save-excursion
                   (goto-char (marker-position marker))
-                  (ai-org-chat--insert-function-call func args)
-                  (ai-org-chat--insert-function-result result)
+                  (ai-org-chat--insert-tool-call tool args)
+                  (ai-org-chat--insert-tool-result result)
                   (set-marker marker (point))))
-              result)
-            )))
+              result))))
     (make-llm-function-call
      :function wrapped-func
-     :name (llm-function-call-name func)
-     :description (llm-function-call-description func)
-     :args (llm-function-call-args func))))
+     :name (llm-function-call-name tool)
+     :description (llm-function-call-description tool)
+     :args (llm-function-call-args tool))))
 
 (defun ai-org-chat--create-heading (heading)
   "Create new subtree with HEADING as heading."
@@ -299,7 +300,7 @@ SYSTEM-CONTEXT is the system message with context."
                    (ai-org-chat--format-messages messages system-context)
                    :context system-context
                    :functions (mapcar (lambda (tool-symbol)
-                                        (ai-org-chat--wrap-function
+                                        (ai-org-chat--create-logging-tool
                                          (symbol-value (intern tool-symbol))
                                          point))
                                       (ai-org-chat--get-tools)))))
