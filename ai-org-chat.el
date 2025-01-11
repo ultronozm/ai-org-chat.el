@@ -252,18 +252,6 @@ PROVIDER is the LLM service provider."
           (format "%s" result)
           "\n:END:\n\n"))
 
-(defun ai-org-chat--wrapped-function-call (orig-func func marker args)
-  "Call ORIG-FUNC with ARGS, logging call and result at MARKER.
-FUNC is the llm-function-call object."
-  (let ((result (apply orig-func args)))
-    (with-current-buffer (marker-buffer marker)
-      (save-excursion
-        (goto-char (marker-position marker))
-        (ai-org-chat--insert-function-call func args)
-        (ai-org-chat--insert-function-result result)
-        (set-marker marker (point))))
-    result))
-
 (defun ai-org-chat--wrap-function (func marker)
   "Wrap FUNC to log its calls and results in the org buffer at MARKER."
   (let* ((orig-func (llm-function-call-function func))
@@ -277,7 +265,6 @@ FUNC is the llm-function-call object."
                   (ai-org-chat--insert-function-result result)
                   (set-marker marker (point))))
               result)
-            ;; (ai-org-chat--wrapped-function-call orig-func func marker args)
             )))
     (make-llm-function-call
      :function wrapped-func
