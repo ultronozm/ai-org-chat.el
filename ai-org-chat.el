@@ -241,9 +241,9 @@ PROVIDER is the LLM service provider."
 
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
-TOOL is an llm-function-call object.  Returns a new llm-function-call
+TOOL is an llm-tool-function object.  Returns a new llm-tool-function
 object with logging behavior added."
-  (let* ((orig-func (llm-function-call-function tool))
+  (let* ((orig-func (llm-tool-function-function tool))
          (wrapped-func
           (lambda (&rest args)
             (let ((result (apply orig-func args)))
@@ -251,7 +251,7 @@ object with logging behavior added."
                 (save-excursion
                   (goto-char (marker-position marker))
                   (insert "\n:TOOL_CALL:\n"
-                          (json-encode `((name . ,(llm-function-call-name tool))
+                          (json-encode `((name . ,(llm-tool-function-name tool))
                                          (arguments . ,args)))
                           "\n:END:\n")
                   (insert "\n:TOOL_RESULT:\n"
@@ -259,11 +259,12 @@ object with logging behavior added."
                           "\n:END:\n\n")
                   (set-marker marker (point))))
               result))))
-    (make-llm-function-call
+    (llm-make-tool-function
      :function wrapped-func
-     :name (llm-function-call-name tool)
-     :description (llm-function-call-description tool)
-     :args (llm-function-call-args tool))))
+     :name (llm-tool-function-name tool)
+     :description (llm-tool-function-description tool)
+     :args (llm-tool-function-args tool)
+     :async (llm-tool-function-async tool))))
 
 (defun ai-org-chat--create-heading (heading)
   "Create new subtree with HEADING as heading."
@@ -284,18 +285,18 @@ SYSTEM-CONTEXT is the system message with context."
         (unless (featurep 'gptel)
           (require 'gptel))
         (gptel-request
-            (ai-org-chat--format-messages messages system-context)
-          :position point
-          :stream t
-          :in-place t))
+         (ai-org-chat--format-messages messages system-context)
+         :position point
+         :stream t
+         :in-place t))
     (let ((prompt (llm-make-chat-prompt
                    (ai-org-chat--format-messages messages system-context)
                    :context system-context
-                   :functions (mapcar (lambda (tool-symbol)
-                                        (ai-org-chat--create-logging-tool
-                                         (symbol-value (intern tool-symbol))
-                                         point))
-                                      (ai-org-chat--get-tools)))))
+                   :tools (mapcar (lambda (tool-symbol)
+                                    (ai-org-chat--create-logging-tool
+                                     (symbol-value (intern tool-symbol))
+                                     point))
+                                  (ai-org-chat--get-tools)))))
       (ai-org-chat--call-with-functions
        ai-org-chat-provider
        prompt
