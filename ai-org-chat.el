@@ -453,8 +453,8 @@ beginning and end of the desired region, respectively."
       (format "%s\n%s\n" name
               (ai-org-chat--enclose-in-src-block content major-mode)))))
 
-(defun ai-org-chat--get-permanent-context-items ()
-  "Get list of permanent context buffer names or file paths.
+(defun ai-org-chat--get-context-items ()
+  "Get list of context buffer names or file paths.
 Uses current and ancestor nodes."
   (let ((items (org-entry-get-multivalued-property (point-min) "CONTEXT")))
     (save-excursion
@@ -480,9 +480,9 @@ Uses current and ancestor nodes."
           (setq not-done (org-up-heading-safe)))))
     (delete-dups items)))
 
-(defun ai-org-chat--get-permanent-context-content ()
-  "Get content of permanent context buffers, files, and functions."
-  (let ((permanent-items (ai-org-chat--get-permanent-context-items)))
+(defun ai-org-chat--get-context ()
+  "Get content of context buffers, files, and functions."
+  (let ((items (ai-org-chat--get-context-items)))
     (mapconcat
      (lambda (item)
        (cond
@@ -507,7 +507,7 @@ Uses current and ancestor nodes."
         (t
          (warn "Item %s not found as buffer, file, or function" item)
          nil)))
-     permanent-items
+     items
      "\n")))
 
 (defun ai-org-chat--find-file-in-project (filename)
@@ -539,9 +539,9 @@ Returns the full path if found, nil otherwise."
 
 (defun ai-org-chat--context ()
   "Wrap MESSAGE in a system message, adding context if appropriate."
-  (let ((permanent-context (ai-org-chat--get-permanent-context-content)))
-    (when (not (string-empty-p permanent-context))
-      (format "Selected buffers contents:\n\n%s\n" permanent-context))))
+  (let ((context (ai-org-chat--get-context)))
+    (when (not (string-empty-p context))
+      (format "Selected buffers contents:\n\n%s\n" context))))
 
 
 (defun ai-org-chat--add-context (items)
@@ -551,7 +551,7 @@ ITEMS is a list of strings to add to the context."
           (org-entry-get-multivalued-property (point) "CONTEXT"))
          (new-items (delete-dups (append current-context items))))
     (apply #'org-entry-put-multivalued-property (point) "CONTEXT" new-items)
-    (message "Added %d item(s) to permanent context"
+    (message "Added %d item(s) to context"
              (length items))))
 
 ;;;###autoload
@@ -560,7 +560,7 @@ ITEMS is a list of strings to add to the context."
   (interactive)
   (let ((selected-buffers
          (completing-read-multiple
-          "Select buffers to add to permanent context: "
+          "Select buffers to add to context: "
           (mapcar #'buffer-name (buffer-list)))))
     (ai-org-chat--add-context selected-buffers)))
 
@@ -577,7 +577,7 @@ Excludes current buffer."
                            (mapcar #'window-buffer visible-windows)))
          (buffer-names (mapcar #'buffer-name visible-buffers)))
     (ai-org-chat--add-context buffer-names)
-    (message "Added %d visible buffer(s) to permanent context"
+    (message "Added %d visible buffer(s) to context"
              (length buffer-names))))
 
 (defun ai-org-chat-add-file-context ()
@@ -585,7 +585,7 @@ Excludes current buffer."
   (interactive)
   (let ((selected-files
          (completing-read-multiple
-          "Enter file paths to add to permanent context: "
+          "Enter file paths to add to context: "
           #'completion-file-name-table)))
     (ai-org-chat--add-context selected-files)))
 
@@ -594,7 +594,7 @@ Excludes current buffer."
   (interactive)
   (let* ((function-symbols
           (completing-read-multiple
-           "Select functions to add to permanent context: "
+           "Select functions to add to context: "
            (let (symbols)
              (mapatoms
               (lambda (sym)
@@ -962,7 +962,7 @@ This function:
 
 (defun ai-org-chat--get-context-buffers ()
   "Get list of buffers specified in CONTEXT properties."
-  (let ((buffer-names (ai-org-chat--get-permanent-context-items)))
+  (let ((buffer-names (ai-org-chat--get-context-items)))
     (cl-remove-if-not #'identity
                       (mapcar (lambda (name)
                                 (or (get-buffer name)
