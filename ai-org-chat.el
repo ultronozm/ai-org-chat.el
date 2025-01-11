@@ -246,27 +246,34 @@ PROVIDER is the LLM service provider."
 TOOL is an llm-tool-function object.  Returns a new llm-tool-function
 object with logging behavior added."
   (let* ((orig-func (llm-tool-function-function tool))
-         (wrapped-func
-          (lambda (&rest args)
-            (let ((result (apply orig-func args)))
-              (with-current-buffer (marker-buffer marker)
-                (save-excursion
-                  (goto-char (marker-position marker))
-                  (insert "\n:TOOL_CALL:\n"
-                          (json-encode `((name . ,(llm-tool-function-name tool))
-                                         (arguments . ,args)))
-                          "\n:END:\n")
-                  (insert "\n:TOOL_RESULT:\n"
-                          (format "%s" result)
-                          "\n:END:\n\n")
-                  (set-marker marker (point))))
-              result))))
-    (llm-make-tool-function
-     :function wrapped-func
-     :name (llm-tool-function-name tool)
-     :description (llm-tool-function-description tool)
-     :args (llm-tool-function-args tool)
-     :async (llm-tool-function-async tool))))
+         (tool-marker (make-marker)))
+    (set-marker tool-marker (marker-position marker))
+    (set-marker-insertion-type tool-marker nil)
+    (let ((wrapped-func
+           (lambda (&rest args)
+             (let ((result nil))
+               (let ((wrapped-callback
+                      (lambda (r)
+                        (setq result r)
+                        (with-current-buffer (marker-buffer tool-marker)
+                          (save-excursion
+                            (goto-char tool-marker)
+                            (insert ":TOOL_CALL:\n"
+                                    (json-encode `((name . ,(llm-tool-function-name tool))
+                                                   (arguments . ,(cdr args))))
+                                    "\n:END:\n")
+                            (insert ":TOOL_RESULT:\n"
+                                    (format "%s" result)
+                                    "\n:END:\n\n")))
+                        (funcall (car args) r))))
+                 (apply orig-func wrapped-callback (cdr args))
+                 result)))))
+      (llm-make-tool-function
+       :function wrapped-func
+       :name (llm-tool-function-name tool)
+       :description (llm-tool-function-description tool)
+       :args (llm-tool-function-args tool)
+       :async (llm-tool-function-async tool)))))
 
 (defun ai-org-chat--create-heading (heading)
   "Create new subtree with HEADING as heading."
