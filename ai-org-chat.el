@@ -27,7 +27,6 @@
 ;; inside any org-mode buffer.  See the README for configuration and
 ;; usage instructions.
 
-
 ;;; Code:
 
 (require 'org)
@@ -45,11 +44,8 @@
 (defvar ai-org-chat-provider 'gptel
   "The LLM provider to use for AI chat.
 This should be either
-
 - the symbol `gptel', or
-
-- an instance of an LLM provider created using the `llm' package (e.g.,
-via `make-llm-openai').")
+- an instance of an LLM provider created using the `llm' package.")
 
 (defcustom ai-org-chat-user-name "User"
   "User name to insert into buffer."
@@ -73,8 +69,7 @@ You can directly affect the user's computing environment by requesting that the 
 
 Look at the system message LAST -- it contains the most up-to-date contents, more recent than the previous chat messages.
 
-Use double spaces between sentences (an Emacs convention).
-"
+Use double spaces between sentences (an Emacs convention)."
   "System message to use, if any."
   :type '(choice string (const nil)))
 
@@ -85,8 +80,7 @@ Use double spaces between sentences (an Emacs convention).
 (defvar ai-org-chat-minor-mode)
 
 (defconst ai-org-chat-local-variables
-  "# -*- eval: (ai-org-chat-minor-mode 1); -*-
-"
+  "# -*- eval: (ai-org-chat-minor-mode 1); -*-\n"
   "Local variables to insert into new AI chat buffers.")
 
 ;;;###autoload
