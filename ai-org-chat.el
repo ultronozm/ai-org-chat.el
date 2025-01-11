@@ -239,19 +239,6 @@ PROVIDER is the LLM service provider."
         (goto-char end)
         (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
-(defun ai-org-chat--insert-tool-call (func args)
-  "Insert FUNC call with ARGS into the current org buffer."
-  (insert "\n:FUNCTION_CALL:\n"
-          (json-encode `((name . ,(llm-function-call-name func))
-                         (arguments . ,args)))
-          "\n:END:\n"))
-
-(defun ai-org-chat--insert-tool-result (result)
-  "Insert RESULT of a function call into the current org buffer."
-  (insert "\n:FUNCTION_RESULT:\n"
-          (format "%s" result)
-          "\n:END:\n\n"))
-
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
 TOOL is an llm-function-call object.  Returns a new llm-function-call
@@ -263,8 +250,13 @@ object with logging behavior added."
               (with-current-buffer (marker-buffer marker)
                 (save-excursion
                   (goto-char (marker-position marker))
-                  (ai-org-chat--insert-tool-call tool args)
-                  (ai-org-chat--insert-tool-result result)
+                  (insert "\n:TOOL_CALL:\n"
+                          (json-encode `((name . ,(llm-function-call-name tool))
+                                         (arguments . ,args)))
+                          "\n:END:\n")
+                  (insert "\n:TOOL_RESULT:\n"
+                          (format "%s" result)
+                          "\n:END:\n\n")
                   (set-marker marker (point))))
               result))))
     (make-llm-function-call
