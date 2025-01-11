@@ -116,12 +116,14 @@ insert local variables, and add initial heading."
                       (lambda (line)
                         (string-match-p "^[ \t]*:END:[ \t]*$" line))
                       lines))
-         (filtered-lines (if (and drawer-start drawer-end)
-                             (append
-                              (cl-subseq lines 0 drawer-start)
-                              (cl-subseq lines (1+ drawer-end)))
-                           lines)))
-    (mapconcat 'identity filtered-lines "\n")))
+         (lines-without-properties (if (and drawer-start drawer-end)
+                                       (append
+                                        (cl-subseq lines 0 drawer-start)
+                                        (cl-subseq lines (1+ drawer-end)))
+                                     lines))
+         (lines-without-properties-or-heading
+          (cdr lines-without-properties)))
+    (mapconcat 'identity lines-without-properties-or-heading "\n")))
 
 (defun ai-org-chat--get-entry-heading-and-text ()
   "Get cons cell of current entry's clean heading and text."
