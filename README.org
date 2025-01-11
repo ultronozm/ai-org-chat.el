@@ -35,7 +35,6 @@ Download this repository, install using =M-x package-install-file= (or package-v
   :custom
   (ai-org-chat-user-name "Paul")
   (ai-org-chat-dir "~/gpt")
-  (ai-org-chat-context-style nil)
   :config
   ;; See below
   ;; (ai-org-chat-select-model "sonnet 3.5")
@@ -92,8 +91,6 @@ Example:
 :END:
 #+end_example
 
-The =ai-org-chat-context-style= variable determines how visible buffer contents are included in the context.  It can be set to =nil=, =visible-contents=, or =visible-buffers=.
-
 ** Tools
 
 Tools (or "function calls") are specified using the =TOOLS= property.  This property should contain a list of =llm= function symbols that the AI can use.  This feature works only if the variable =ai-org-chat-provider= is set to a provider for the =llm= package that supports tools.
@@ -109,14 +106,12 @@ Example:
 
 While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), ai-org-chat provides some helper commands for managing context:
 
-- =ai-org-chat-set-context-style=: Set the =ai-org-chat-context-style= as a file-local variable.
 - =ai-org-chat-add-buffer-context=: Add selected buffers as context.
 - =ai-org-chat-add-visible-buffers-context=: Add all visible buffers as context.
 - =ai-org-chat-add-file-context=: Add selected files as context.
 - =ai-org-chat-add-project-files-context=: Add all files from a selected project as context.
 
 These commands are designed to simplify context/tool management, but are not required for using the package.
-#+end_src
 
 * Compare Feature
 

@@ -310,10 +310,10 @@ SYSTEM-CONTEXT is the system message with context."
         (unless (featurep 'gptel)
           (require 'gptel))
         (gptel-request
-         (ai-org-chat--format-messages messages system-context)
-         :position point
-         :stream t
-         :in-place t))
+            (ai-org-chat--format-messages messages system-context)
+          :position point
+          :stream t
+          :in-place t))
     (let ((prompt (llm-make-chat-prompt
                    (ai-org-chat--format-messages messages system-context)
                    :context system-context
@@ -439,34 +439,7 @@ positioned at the top of the document."
 
 ;;; Context
 
-(defcustom ai-org-chat-context-style nil
-  "Type of editor context to send to the AI.
-This can be either nil, `visible-contents', or `visible-buffers'."
-  :type '(choice (const nil) (const visible-contents) (const visible-buffers))
-  :local t
-  :safe #'symbolp)
-
 (declare-function custom-variable-type "cus-edit")
-
-(defun ai-org-chat-set-context-style ()
-  "Set the value of `ai-org-chat-context-style' as a file-local variable.
-Using the prop line, at top of file."
-  (interactive)
-  (require 'wid-edit)
-  (require 'cus-edit)
-  (let* ((variable 'ai-org-chat-context-style)
-         (type (custom-variable-type variable))
-         (current-value (if (local-variable-p variable)
-                            (buffer-local-value variable (current-buffer))
-                          (default-value variable)))
-         (prompt (format "Set %s to: " variable))
-         (value (widget-prompt-value type prompt current-value nil)))
-    ;; Set as file-local variable
-    (save-excursion
-      (add-file-local-variable-prop-line variable value))
-    ;; Set as buffer-local variable
-    (set (make-local-variable variable) value)
-    (message "Set %s to %s (file-locally and buffer-locally)" variable value)))
 
 (defun ai-org-chat--buffer-contents (buf point-functions)
   "Use POINT-FUNCTIONS to extract contents of buffer BUF.
@@ -512,33 +485,6 @@ Uses current and ancestor nodes."
               (setq items (append items context))))
           (setq not-done (org-up-heading-safe)))))
     (delete-dups items)))
-
-(defun ai-org-chat--get-context-content ()
-  "Get context content."
-  (let ((windows (seq-remove
-                  (lambda (window)
-                    (eq (window-buffer window) (current-buffer)))
-                  (window-list))))
-    ;; remove redundant windows
-    (setq windows (seq-uniq
-                   windows
-                   (lambda (a b)
-                     (eq (window-buffer a) (window-buffer b)))))
-    ;; remove permanent context buffers
-    (setq windows (seq-remove
-                   (lambda (window)
-                     (member (buffer-name (window-buffer window))
-                             (ai-org-chat--get-permanent-context-items)))
-                   windows))
-    (mapconcat
-     (lambda (window)
-       (ai-org-chat--buffer-contents
-        (window-buffer window)
-        (if (eq ai-org-chat-context-style 'visible-contents)
-            '(window-start window-end)
-          '(point-min point-max))))
-     windows
-     "\n")))
 
 (defun ai-org-chat--get-permanent-context-content ()
   "Get content of permanent context buffers, files, and functions."
@@ -598,20 +544,10 @@ Returns the full path if found, nil otherwise."
       'fundamental-mode)))
 
 (defun ai-org-chat--context ()
-  "Wrap MESSAGE in a system message, adding context if appropriate.
-The context depends on the value of `ai-org-chat-context-style'."
+  "Wrap MESSAGE in a system message, adding context if appropriate."
   (let ((permanent-context (ai-org-chat--get-permanent-context-content)))
-    (concat
-     (when (not (string-empty-p permanent-context))
-       (format "Selected buffers contents:\n\n%s\n" permanent-context))
-     (pcase ai-org-chat-context-style
-       ('visible-contents
-        (format "Visible buffer contents:\n\n%s\n"
-                (ai-org-chat--get-context-content)))
-       ('visible-buffers
-        (format "Contents of visible buffers:\n\n%s\n"
-                (ai-org-chat--get-context-content)))
-       (_ "")))))  ; No additional context for other cases
+    (when (not (string-empty-p permanent-context))
+      (format "Selected buffers contents:\n\n%s\n" permanent-context))))
 
 
 (defun ai-org-chat--add-context (items)
@@ -1194,9 +1130,7 @@ MODEL is a string key from `ai-org-chat-models'."
               ["Add Directory Files Context" ai-org-chat-add-directory-files-context
                :help "Add files from a directory as context"]
               ["Add Project Files Context" ai-org-chat-add-project-files-context
-               :help "Add files from a project as context"]
-              ["Set Context Style" ai-org-chat-set-context-style
-               :help "Set the context style as a file-local variable"])
+               :help "Add files from a project as context"])
         (list "Format"
               ["Convert Markdown Blocks" ai-org-chat-convert-markdown-blocks-to-org
                :help "Convert Markdown style code blocks to org"]
