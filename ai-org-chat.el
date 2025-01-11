@@ -98,8 +98,8 @@ insert local variables, and add initial heading."
 
 ;;; Message collection
 
-(defun ai-org-chat--current-body ()
-  "Return text of current entry, excluding children and properties."
+(defun ai-org-chat--get-entry-text ()
+  "Get text of current entry, excluding properties drawer."
   (let* ((content (save-excursion
                     (org-back-to-heading)
                     (buffer-substring-no-properties
@@ -108,35 +108,35 @@ insert local variables, and add initial heading."
                        (outline-next-heading)
                        (point)))))
          (lines (split-string content "\n"))
-         (beg-re "^[ \t]*:PROPERTIES:[ \t]*$")
-         (end-re "^[ \t]*:END:[ \t]*$")
-         (beg (cl-position-if (apply-partially #'string-match-p beg-re) lines))
-         (end (cl-position-if (apply-partially #'string-match-p end-re) lines))
-         (newlines (cdr (if (and beg end)
-                            (append (cl-subseq lines 0 beg)
-                                    (cl-subseq lines (1+ end)
-                                               (length lines)))
-                          lines))))
-    (mapconcat 'identity newlines "\n")))
+         (drawer-start (cl-position-if
+                        (lambda (line)
+                          (string-match-p "^[ \t]*:PROPERTIES:[ \t]*$" line))
+                        lines))
+         (drawer-end (cl-position-if
+                      (lambda (line)
+                        (string-match-p "^[ \t]*:END:[ \t]*$" line))
+                      lines))
+         (filtered-lines (if (and drawer-start drawer-end)
+                             (append
+                              (cl-subseq lines 0 drawer-start)
+                              (cl-subseq lines (1+ drawer-end)))
+                           lines)))
+    (mapconcat 'identity filtered-lines "\n")))
 
-(defun ai-org-chat--current-heading-and-body ()
-  "Return cons cell with heading and body of current entry.
-The heading excludes tags and TODO keywords.  The body consists
-of all text between the heading and the first subtree, but
-excluding the :PROPERTIES: drawer, if any."
-  (let* ((heading (org-get-heading t t))
-         (body (ai-org-chat--current-body)))
-    (cons heading body)))
+(defun ai-org-chat--get-entry-heading-and-text ()
+  "Get cons cell of current entry's clean heading and text."
+  (cons (org-get-heading t t)
+        (ai-org-chat--get-entry-text)))
 
-(defun ai-org-chat--ancestor-messages ()
-  "Return list of ancestor messages for the current entry.
+(defun ai-org-chat--get-conversation-history ()
+  "Get list of conversation messages up to current entry.
 Each message is a cons cell (heading . body)."
-  (let ((ancestors '()))
-    (push (ai-org-chat--current-heading-and-body) ancestors)
+  (let ((messages '()))
+    (push (ai-org-chat--get-entry-heading-and-text) messages)
     (save-excursion
       (while (org-up-heading-safe)
-        (push (ai-org-chat--current-heading-and-body) ancestors)))
-    ancestors))
+        (push (ai-org-chat--get-entry-heading-and-text) messages)))
+    messages))
 
 ;;; Response generation
 
@@ -285,7 +285,7 @@ FUNC is the llm-function-call object."
      :description (llm-function-call-description func)
      :args (llm-function-call-args func))))
 
-(defun ai-org-chat--new-subtree (heading)
+(defun ai-org-chat--create-heading (heading)
   "Create new subtree with HEADING as heading."
   (org-insert-heading-after-current)
   (insert heading)
@@ -329,12 +329,12 @@ SYSTEM-CONTEXT is the system message with context."
   (let* ((system ai-org-chat-system-message)
          (context (ai-org-chat--context))
          (system-context (concat system "\n" context))
-         (messages (ai-org-chat--ancestor-messages))
+         (messages (ai-org-chat--get-conversation-history))
          (point (save-excursion
-                  (ai-org-chat--new-subtree ai-org-chat-ai-name)
+                  (ai-org-chat--create-heading ai-org-chat-ai-name)
                   (insert "\n")
                   (save-excursion
-                    (ai-org-chat--new-subtree ai-org-chat-user-name))
+                    (ai-org-chat--create-heading ai-org-chat-user-name))
                   (point-marker))))
     (ai-org-chat--get-response messages point system-context)))
 
@@ -454,8 +454,7 @@ beginning and end of the desired region, respectively."
               (ai-org-chat--enclose-in-src-block content major-mode)))))
 
 (defun ai-org-chat--get-context-items ()
-  "Get list of context buffer names or file paths.
-Uses current and ancestor nodes."
+  "Get list of context items from CONTEXT properties up the tree."
   (let ((items (org-entry-get-multivalued-property (point-min) "CONTEXT")))
     (save-excursion
       (let ((not-done t))
@@ -707,7 +706,7 @@ ones."
          (not (equal (org-get-heading t t) ai-org-chat-ai-name))
          (setq not-at-top (org-up-heading-safe))))
     (if not-at-top
-        (ai-org-chat--new-subtree ai-org-chat-user-name)
+        (ai-org-chat--create-heading ai-org-chat-user-name)
       (goto-char (point-max))
       (org-insert-heading t nil t)
       (insert (concat ai-org-chat-user-name))
