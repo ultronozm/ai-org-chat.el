@@ -243,29 +243,37 @@ PROVIDER is the LLM service provider."
 
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
-TOOL is an llm-function-call object.  Returns a new llm-function-call
+TOOL is an llm-tool-function object.  Returns a new llm-tool-function
 object with logging behavior added."
-  (let* ((orig-func (llm-function-call-function tool))
-         (wrapped-func
-          (lambda (&rest args)
-            (let ((result (apply orig-func args)))
-              (with-current-buffer (marker-buffer marker)
-                (save-excursion
-                  (goto-char (marker-position marker))
-                  (insert "\n:TOOL_CALL:\n"
-                          (json-encode `((name . ,(llm-function-call-name tool))
-                                         (arguments . ,args)))
-                          "\n:END:\n")
-                  (insert "\n:TOOL_RESULT:\n"
-                          (format "%s" result)
-                          "\n:END:\n\n")
-                  (set-marker marker (point))))
-              result))))
-    (make-llm-function-call
-     :function wrapped-func
-     :name (llm-function-call-name tool)
-     :description (llm-function-call-description tool)
-     :args (llm-function-call-args tool))))
+  (let* ((orig-func (llm-tool-function-function tool))
+         (tool-marker (make-marker)))
+    (set-marker tool-marker (marker-position marker))
+    (set-marker-insertion-type tool-marker nil)
+    (let ((wrapped-func
+           (lambda (&rest args)
+             (let ((result nil))
+               (let ((wrapped-callback
+                      (lambda (r)
+                        (setq result r)
+                        (with-current-buffer (marker-buffer tool-marker)
+                          (save-excursion
+                            (goto-char tool-marker)
+                            (insert ":TOOL_CALL:\n"
+                                    (json-encode `((name . ,(llm-tool-function-name tool))
+                                                   (arguments . ,(cdr args))))
+                                    "\n:END:\n")
+                            (insert ":TOOL_RESULT:\n"
+                                    (format "%s" result)
+                                    "\n:END:\n\n")))
+                        (funcall (car args) r))))
+                 (apply orig-func wrapped-callback (cdr args))
+                 result)))))
+      (llm-make-tool-function
+       :function wrapped-func
+       :name (llm-tool-function-name tool)
+       :description (llm-tool-function-description tool)
+       :args (llm-tool-function-args tool)
+       :async (llm-tool-function-async tool)))))
 
 (defun ai-org-chat--create-heading (heading)
   "Create new subtree with HEADING as heading."
@@ -286,18 +294,18 @@ SYSTEM-CONTEXT is the system message with context."
         (unless (featurep 'gptel)
           (require 'gptel))
         (gptel-request
-            (ai-org-chat--format-messages messages system-context)
-          :position point
-          :stream t
-          :in-place t))
+         (ai-org-chat--format-messages messages system-context)
+         :position point
+         :stream t
+         :in-place t))
     (let ((prompt (llm-make-chat-prompt
                    (ai-org-chat--format-messages messages system-context)
                    :context system-context
-                   :functions (mapcar (lambda (tool-symbol)
-                                        (ai-org-chat--create-logging-tool
-                                         (symbol-value (intern tool-symbol))
-                                         point))
-                                      (ai-org-chat--get-tools)))))
+                   :tools (mapcar (lambda (tool-symbol)
+                                    (ai-org-chat--create-logging-tool
+                                     (symbol-value (intern tool-symbol))
+                                     point))
+                                  (ai-org-chat--get-tools)))))
       (ai-org-chat--call-with-functions
        ai-org-chat-provider
        prompt
