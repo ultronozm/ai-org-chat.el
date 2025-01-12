@@ -148,13 +148,13 @@ As a shortcut, the first step (narrowing the buffer) is not necessary if the cod
 
 ** AI Planner
 
-Here's an example of using functions as context to create an AI chat interface to your agenda.  This setup gives the AI access to your diary, weekly agenda, and yearly project timeline.  The setup assumes you use the diary, org-mode and the agenda for task management, with long-term travel-related items stored in a file called projects.org.  It should be easy to adapt this setup to other ways of managing your schedule.
+Here's an example of using functions as context to create an AI chat interface to your agenda. This setup gives the AI access to the current time, your diary, weekly agenda, and yearly project timeline. The setup assumes you use the diary, org-mode and the agenda for task management, with long-term travel-related items stored in a file called projects.org. It should be easy to adapt this setup to other ways of managing your schedule.
 
 1. Create an org file, say =planner.org=
 2. Run =M-x ai-org-chat-setup-buffer=
 3. Add a top-level PROPERTIES drawer containing:
    #+begin_example
-:CONTEXT: ~/.emacs.d/diary my/agenda-for-week my/projects-for-year
+:CONTEXT: my/current-date-and-time ~/.emacs.d/diary my/agenda-for-week my/projects-for-year
    #+end_example
 
 After these steps, the beginning of =planner.org= should look like this:
@@ -162,20 +162,25 @@ After these steps, the beginning of =planner.org= should look like this:
     #+begin_example
 # -*- eval: (ai-org-chat-minor-mode 1); -*-
 :PROPERTIES:
-:CONTEXT: ~/.emacs.d/diary my/agenda-for-week my/projects-for-year
+:CONTEXT: my/current-date-and-time ~/.emacs.d/diary my/agenda-for-week my/projects-for-year
 :END:
     #+end_example
 
 The context consists of:
-1. Your diary file (~/.emacs.d/diary)
-2. A function that provides your agenda for the next seven days
-3. A function that provides your project timeline for the next year
+1. A function that provides the current date and time
+2. Your diary file (~/.emacs.d/diary)
+3. A function that provides your agenda for the next seven days
+4. A function that provides your project timeline for the next year
 
-With this setup, you can chat with an AI that has continuous access to your schedule and plans.  For example, you can ask "Which afternoons do I have free this week?" or "When's the best time to schedule a trip in March?"
+With this setup, you can chat with an AI that has continuous access to your schedule and plans. For example, you can ask "Which afternoons do I have free this week?" or "When's the best time to schedule a trip in March?"
 
-The two agenda-related functions can be implemented as follows:
+The three agenda-related functions can be implemented as follows:
 
 #+begin_src elisp
+(defun my/current-date-and-time ()
+  "Return string describing current date and time."
+  (format-time-string "%A, %B %d, %Y at %I:%M %p"))
+
 (defun my/agenda-for-week ()
   "Return string containing full agenda for the next seven days."
   (interactive)
@@ -190,18 +195,18 @@ The two agenda-related functions can be implemented as follows:
       (org-agenda nil "a")
       (buffer-substring-no-properties (point-min) (point-max)))))
 
-(defun my/filter-diary-contents (diary-file)
-  "Return diary contents without holiday entries from DIARY-FILE."
+(defun my/filter-diary-contents ()
+  "Return diary contents without holiday entries."
   (with-temp-buffer
     (insert-file-contents diary-file)
     (goto-char (point-min))
     (keep-lines "^[^&]" (point-min) (point-max))
     (buffer-string)))
 
-(defun my/with-filtered-diary (diary-file fn)
-  "Execute FN with a filtered version of DIARY-FILE.
+(defun my/with-filtered-diary (fn)
+  "Execute FN with a filtered version of the diary.
 Temporarily creates and uses a diary file without holiday entries."
-  (let ((filtered-contents (my/filter-diary-contents diary-file)))
+  (let ((filtered-contents (my/filter-diary-contents)))
     (with-temp-file "/tmp/temp-diary"
       (insert filtered-contents))
     (let ((diary-file "/tmp/temp-diary"))
@@ -213,7 +218,7 @@ Skips empty days and diary holidays."
   (interactive)
   (save-window-excursion
     (require 'org-agenda)
-    (let ((org-agenda-files (list "/path/to/projects.org"))
+    (let ((org-agenda-files (list my-projects-file))
           (org-agenda-span 365)
           (org-agenda-start-on-weekday nil)
           (org-agenda-start-day (format-time-string "%Y-%m-%d"))
@@ -223,7 +228,6 @@ Skips empty days and diary holidays."
           (diary-show-holidays-flag nil)
           (org-agenda-show-all-dates nil))
       (my/with-filtered-diary
-       diary-file
        (lambda ()
          (org-agenda nil "a")
          (buffer-substring-no-properties (point-min) (point-max)))))))
