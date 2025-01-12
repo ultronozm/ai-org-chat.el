@@ -705,6 +705,33 @@ to filter the files (e.g., \"*.py\" for Python files)."
                  (project-root project)
                  wildcard)))))
 
+;;; Tools
+
+(defun ai-org-chat-add-tools ()
+  "Add selected tools to the current org node's TOOLS property.
+Prompts for tool functions (which must be `llm-tool-function' objects) to add.
+Only allows selection of symbols that are bound to `llm-tool-function' objects."
+  (interactive)
+  (let* ((tool-symbols
+          (let (symbols)
+            (mapatoms
+             (lambda (sym)
+               (when (and (boundp sym)
+                          (symbol-value sym)
+                          (llm-tool-function-p (symbol-value sym)))
+                 (push (symbol-name sym) symbols))))
+            symbols))
+         (selected-tools
+          (completing-read-multiple
+           "Select tools to add: "
+           tool-symbols)))
+    (when selected-tools
+      (let* ((current-tools
+              (org-entry-get-multivalued-property (point) "TOOLS"))
+             (new-tools (delete-dups (append current-tools selected-tools))))
+        (apply #'org-entry-put-multivalued-property (point) "TOOLS" new-tools)
+        (message "Added %d tool(s)" (length selected-tools))))))
+
 ;;; Convenience
 
 ;;;###autoload
@@ -1134,17 +1161,20 @@ MODEL is a string key from `ai-org-chat-models'."
         "-"
         (list "Context"
               ["Add Buffer Context" ai-org-chat-add-buffer-context
-               :help "Add selected buffers as context"]
+               :help "Add selected buffers"]
               ["Add Visible Buffers Context" ai-org-chat-add-visible-buffers-context
-               :help "Add all visible buffers as context"]
+               :help "Add all visible buffers"]
               ["Add File Context" ai-org-chat-add-file-context
-               :help "Add selected files as context"]
+               :help "Add selected files"]
               ["Add Function Context" ai-org-chat-add-function-context
-               :help "Add selected function symbols as context"]
+               :help "Add selected function symbols"]
               ["Add Directory Files Context" ai-org-chat-add-directory-files-context
-               :help "Add files from a directory as context"]
+               :help "Add files from a directory"]
               ["Add Project Files Context" ai-org-chat-add-project-files-context
-               :help "Add files from a project as context"])
+               :help "Add files from a project"])
+        (list "Tools"
+              ["Add Tools" ai-org-chat-add-tools
+               :help "Add tool functions to the current node"])
         (list "Format"
               ["Convert Markdown Blocks" ai-org-chat-convert-markdown-blocks-to-org
                :help "Convert Markdown style code blocks to org"]

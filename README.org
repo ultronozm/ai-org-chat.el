@@ -93,7 +93,11 @@ Example:
 
 ** Tools
 
-Tools (or "function calls") are specified using the =TOOLS= property.  This property should contain a list of =llm= function symbols that the AI can use.  This feature works only if the variable =ai-org-chat-provider= is set to a provider for the =llm= package that supports tools.
+Tools (or "function calls") are specified using the =TOOLS= property.  This property should contain a list of =llm-tool-function= objects that the AI can use.  This feature works only if:
+
+1. The variable =ai-org-chat-provider= is set to a provider from the =llm= package
+2. That provider supports tools/function calls
+3. The tools have been properly defined as =llm-tool-function= objects
 
 Example:
 #+begin_example
@@ -104,12 +108,13 @@ Example:
 
 ** Helper Commands
 
-While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), ai-org-chat provides some helper commands for managing context:
+While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), =ai-org-chat= provides some helper commands for managing context and tools:
 
 - =ai-org-chat-add-buffer-context=: Add selected buffers as context.
 - =ai-org-chat-add-visible-buffers-context=: Add all visible buffers as context.
 - =ai-org-chat-add-file-context=: Add selected files as context.
 - =ai-org-chat-add-project-files-context=: Add all files from a selected project as context.
+- =ai-org-chat-add-tools=: Add selected =llm-tool-function= objects to the current node.
 
 These commands are designed to simplify context/tool management, but are not required for using the package.
 
