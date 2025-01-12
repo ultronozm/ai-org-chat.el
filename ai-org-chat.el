@@ -205,32 +205,6 @@ REMAINING-DEPTH determines how many more recursive calls are allowed."
   (let* ((start (with-current-buffer buffer (copy-marker point nil)))
          (end (with-current-buffer buffer (copy-marker point t)))
          (captured-buffer buffer)
-         (partial-cb (when ai-org-chat-streaming-p
-                       (lambda (response)
-                         (ai-org-chat--insert-text start end response))))
-         (final-cb
-          (lambda (response)
-            (ai-org-chat--handle-final-response
-             prompt response start end remaining-depth provider)))
-         (error-cb
-          (lambda (err msg)
-            (with-current-buffer captured-buffer
-              (goto-char end)
-              (insert (format "\nError: %s - %s\n" err msg)))
-            (ai-org-chat--handle-final-response
-             prompt (format "Error: %s - %s" err msg) start end remaining-depth provider))))
-    (if ai-org-chat-streaming-p
-        (llm-chat-streaming provider prompt partial-cb final-cb error-cb)
-      (llm-chat-async provider prompt final-cb error-cb))))
-
-(defun ai-org-chat--call-with-functions (provider prompt buffer point remaining-depth)
-  "Call the LLM, optionally streaming output to buffer.
-PROVIDER supplies the LLM service.  PROMPT is the input for the LLM.
-BUFFER and POINT specify where to insert the response.
-REMAINING-DEPTH determines how many more recursive calls are allowed."
-  (let* ((start (with-current-buffer buffer (copy-marker point nil)))
-         (end (with-current-buffer buffer (copy-marker point t)))
-         (captured-buffer buffer)
          (tools (and (llm-chat-prompt-p prompt)
                      (llm-chat-prompt-tools prompt)))
          ;; Disable streaming if tools are present
