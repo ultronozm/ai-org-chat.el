@@ -96,7 +96,7 @@ insert local variables, and add initial heading."
   (insert ai-org-chat-local-variables)
   (ai-org-chat-branch))
 
-;;; Message collection
+;;; Collecting messages
 
 (defun ai-org-chat--get-entry-text ()
   "Get text of current entry, excluding properties drawer."
@@ -139,6 +139,164 @@ Each message is a cons cell (heading . body)."
       (while (org-up-heading-safe)
         (push (ai-org-chat--get-entry-heading-and-text) messages)))
     messages))
+
+;;; Collecting context and tools entries
+
+(defun ai-org-chat--collected-inherited-properties (property)
+  "Get unique values for PROPERTY from current and ancestor nodes."
+  (let ((items (org-entry-get-multivalued-property (point-min) property)))
+    (save-excursion
+      (let ((not-done t))
+        (while not-done
+          (let ((context
+                 (org-entry-get-multivalued-property (point) property)))
+            (when context
+              (setq items (append items context))))
+          (setq not-done (org-up-heading-safe)))))
+    (delete-dups items)))
+
+(defun ai-org-chat--collect-context-sources ()
+  "Get list of context items from CONTEXT properties up the tree."
+  (ai-org-chat--collected-inherited-properties "CONTEXT"))
+
+(defun ai-org-chat--collect-tools ()
+  "Get list of tools specified by TOOLS proprerties up the tree."
+  (ai-org-chat--collected-inherited-properties "TOOLS"))
+
+;;; Assembling context strings
+
+(declare-function custom-variable-type "cus-edit")
+
+(defcustom ai-org-chat-modes-for-src-blocks '(tex-mode latex-mode LaTeX-mode Texinfo-mode)
+  "List of modes for which to use src blocks."
+  :type '(repeat symbol))
+
+(defun ai-org-chat--wrap-org (content-plist)
+  "Wrap CONTENT-PLIST in an `org-mode' source block."
+  (let ((mode (or (plist-get content-plist :mode) 'fundamental-mode))
+        (name (plist-get content-plist :name)))
+    (if (or (provided-mode-derived-p mode 'prog-mode)
+            (memq mode ai-org-chat-modes-for-src-blocks))
+        (format "%s\n#+begin_src %s\n%s#+end_src\n"
+                (if (string-empty-p name) "" name)
+                (plist-get content-plist :language)
+                (plist-get content-plist :content))
+      (format "%s\n#+begin_example\n%s#+end_example\n"
+              (if (string-empty-p name) "" name)
+              (plist-get content-plist :content)))))
+
+(defun ai-org-chat--wrap-markdown (content-plist)
+  "Wrap CONTENT-PLIST in a markdown code block."
+  (let ((name (plist-get content-plist :name)))
+    (format "%s\n```%s\n%s```\n"
+            (if (string-empty-p name) "" name)
+            (plist-get content-plist :language)
+            (plist-get content-plist :content))))
+
+(defun ai-org-chat--wrap-xml (content-plist)
+  "Wrap CONTENT-PLIST in XML tags following Anthropic's recommendations."
+  (let ((name (plist-get content-plist :name)))
+    (format "<document>
+  <source>%s</source>
+  <language>%s</language>
+  <document_content>
+%s  </document_content>
+</document>\n"
+            (if (string-empty-p name) "unspecified" name)
+            (plist-get content-plist :language)
+            (plist-get content-plist :content))))
+
+(defcustom ai-org-chat-content-wrapper #'ai-org-chat--wrap-org
+  "Function used to wrap content in appropriate quotation format.
+The function should accept a plist with these properties:
+- :content  - The text content
+- :language - String indicating the content's language
+- :name     - String identifying the source
+It should return the wrapped content as a string."
+  :type '(choice
+          (const :tag "Org Mode" ai-org-chat--wrap-org)
+          (const :tag "Markdown" ai-org-chat--wrap-markdown)
+          (const :tag "XML" ai-org-chat--wrap-xml)
+          (function :tag "Custom function")))
+
+(defun ai-org-chat--try-buffer (source)
+  "Try to extract content from SOURCE as a buffer."
+  (when-let ((buffer (get-buffer source)))
+    (with-current-buffer buffer
+      (list :name (format "Buffer %s" (buffer-name))
+            :mode major-mode
+            :language (replace-regexp-in-string
+                       "-mode$" "" (symbol-name major-mode))
+            :content (buffer-substring-no-properties
+                      (point-min) (point-max))))))
+
+(defun ai-org-chat--find-project-file (filename)
+  "Find FILENAME in current project."
+  (when-let* ((project (project-current))
+              (file (seq-find
+                     (lambda (f)
+                       (string= (file-name-nondirectory f) filename))
+                     (project-files project))))
+    file))
+
+(defun ai-org-chat--try-file (source)
+  "Try to extract content from SOURCE as a file."
+  (when (or (file-exists-p source)
+            (when-let ((project-file (ai-org-chat--find-project-file source)))
+              (setq source project-file)))
+    (let ((mode (let ((mode (assoc-default
+                             source auto-mode-alist 'string-match)))
+                  (if (and mode (symbolp mode))
+                      mode
+                    'fundamental-mode))))
+      (list :name (format "File %s" source)
+            :mode mode
+            :language (replace-regexp-in-string
+                       "-mode$" "" (symbol-name mode))
+            :content (with-temp-buffer
+                       (insert-file-contents source)
+                       (buffer-string))))))
+
+(defun ai-org-chat--try-function (source)
+  "Try to extract content from SOURCE as a function."
+  (when-let ((func (intern-soft source)))
+    (when (functionp func)
+      (list :name (format "Generated by function %s" source)
+            :mode 'emacs-lisp-mode
+            :language "emacs-lisp"
+            :content (funcall func)))))
+
+(defcustom ai-org-chat-source-methods
+  '(ai-org-chat--try-buffer
+    ai-org-chat--try-file
+    ai-org-chat--try-function)
+  "List of functions that attempt to extract content from a source.
+Each function should take a source string and return either nil or a
+content-plist with :name, :mode, :language, and :content keys."
+  :type '(repeat function)
+  :group 'ai-org-chat)
+
+(defun ai-org-chat--extract-source-content (source)
+  "Get wrapped content from SOURCE.
+SOURCE can be a buffer name, file path, or function name.  Return a
+string containing the wrapped content."
+  (when-let* ((content-plist
+               (or (seq-some (lambda (method) (funcall method source))
+                             ai-org-chat-source-methods)
+                   (progn (warn "Item %s not found as buffer, file, or function" source)
+                          nil))))
+    (setf (plist-get content-plist :content)
+          (ai-org-chat--ensure-trailing-newline
+           (plist-get content-plist :content)))
+    (funcall ai-org-chat-content-wrapper content-plist)))
+
+(defun ai-org-chat--assemble-full-context ()
+  "Get all context items and concatenate them into a single string."
+  (let* ((items (ai-org-chat--collect-context-sources))
+         (contexts (delq nil (mapcar #'ai-org-chat--extract-source-content items))))
+    (when contexts
+      (concat "Context:\n\n"
+              (string-join contexts "\n")))))
 
 ;;; Response generation
 
@@ -252,7 +410,7 @@ object with logging behavior added."
   (let* ((orig-func (llm-tool-function-function tool))
          (tool-marker (make-marker)))
     (set-marker tool-marker (marker-position marker))
-    (set-marker-insertion-type tool-marker nil)
+    (set-marker-insertion-type tool-marker t)
     (let ((wrapped-func
            (lambda (&rest args)
              (let ((result nil))
@@ -298,11 +456,11 @@ SYSTEM-CONTEXT is the system message with context."
         (unless (featurep 'gptel)
           (require 'gptel))
         (gptel-request
-         (ai-org-chat--format-messages messages system-context)
-         :position point
-         :stream t
-         :in-place t))
-    (let* ((tools (ai-org-chat--get-tools))
+            (ai-org-chat--format-messages messages system-context)
+          :position point
+          :stream t
+          :in-place t))
+    (let* ((tools (ai-org-chat--collect-tools))
            (prompt (llm-make-chat-prompt
                     (ai-org-chat--format-messages messages system-context)
                     :context system-context
@@ -322,7 +480,7 @@ SYSTEM-CONTEXT is the system message with context."
   "Insert response from AI after current heading in org buffer."
   (interactive)
   (let* ((system ai-org-chat-system-message)
-         (context (ai-org-chat--context))
+         (context (ai-org-chat--assemble-full-context))
          (system-context (concat system "\n" context))
          (messages (ai-org-chat--get-conversation-history))
          (point (save-excursion
@@ -347,58 +505,28 @@ Create org buffer with timestamped filename and set it up for AI chat."
     (find-file path)
     (ai-org-chat-setup-buffer)))
 
-(defcustom ai-org-chat-region-filter-functions
-  '(ai-org-chat--ensure-trailing-newline
-    ai-org-chat--enclose-in-src-block)
-  "List of functions to call on quoted region contents.
-These functions are applied as preprocessing steps to the region passed
-to `ai-org-chat-new-region'.  Each function should accept two arguments:
-the region as a string, and the major-mode for the buffer from which it
-came.  It should return the processed string."
-  :type '(repeat function))
-
-(defun ai-org-chat--ensure-trailing-newline (content _mode)
+(defun ai-org-chat--ensure-trailing-newline (content)
   "Ensure that CONTENT ends with a newline."
   (if (string-match "\n\\'" content)
       content
     (concat content "\n")))
 
-(defcustom ai-org-chat-modes-for-src-blocks '(tex-mode latex-mode LaTeX-mode Texinfo-mode)
-  "List of modes for which to use src blocks."
-  :type '(repeat symbol))
-
-(defun ai-org-chat--enclose-in-src-block (content mode)
-  "Enclose CONTENT in a src block, if appropriate.
-A src block is used if MODE is a programming mode
-or belongs to `ai-org-chat-modes-for-src-blocks'."
-  (if (or (provided-mode-derived-p mode 'prog-mode)
-          (memq mode ai-org-chat-modes-for-src-blocks))
-      (let ((mode-name (replace-regexp-in-string
-                        "-mode\\'"
-                        ""
-                        (symbol-name mode))))
-        (concat
-         (format "#+begin_src %s\n" mode-name)
-         content
-         "#+end_src"))
-    (concat
-     "#+begin_example\n"
-     content
-     "#+end_example")))
-
 (defun ai-org-chat-new-region (beg end)
   "Start new AI chat, quoting region between BEG and END.
-Send user to an AI chat buffer.  Copy current region contents
-into that buffer, applying the filters in the variable
-`ai-org-chat-region-filter-functions'."
+Send user to an AI chat buffer.  Copy current region contents into that buffer."
   (interactive "r")
-  (let ((region-contents
-         (buffer-substring-no-properties beg end)))
-    (dolist (filter ai-org-chat-region-filter-functions)
-      (setq region-contents (funcall filter region-contents major-mode)))
+  (let* ((content (ai-org-chat--ensure-trailing-newline
+                   (buffer-substring-no-properties beg end)))
+         (region-contents
+          (ai-org-chat--wrap-org
+           (list :name ""
+                 :mode major-mode
+                 :language (replace-regexp-in-string
+                            "-mode$" "" (symbol-name major-mode))
+                 :content content))))
     (ai-org-chat-new-empty)
     (save-excursion
-      (newline 2)
+      (newline)
       (insert region-contents))))
 
 ;;;###autoload
@@ -426,117 +554,7 @@ positioned at the top of the document."
         (ai-org-chat-add-visible-buffers-context)
         (ai-org-chat--add-context (list (buffer-name original-buffer)))))))
 
-;;; Context
-
-(declare-function custom-variable-type "cus-edit")
-
-(defun ai-org-chat--buffer-contents (buf point-functions)
-  "Use POINT-FUNCTIONS to extract contents of buffer BUF.
-Here POINT-FUNCTIONS is a list of two functions that should return the
-beginning and end of the desired region, respectively."
-  (with-current-buffer buf
-    (let* ((beg
-            (max
-             (point-min)
-             (funcall (nth 0 point-functions))))
-           (end
-            (min
-             (point-max)
-             (funcall (nth 1 point-functions))))
-           (content (buffer-substring-no-properties beg end))
-           (name (buffer-name)))
-      (format "%s\n%s\n" name
-              (ai-org-chat--enclose-in-src-block content major-mode)))))
-
-(defun ai-org-chat--get-context-items ()
-  "Get list of context items from CONTEXT properties up the tree."
-  (let ((items (org-entry-get-multivalued-property (point-min) "CONTEXT")))
-    (save-excursion
-      (let ((not-done t))
-        (while not-done
-          (let ((context
-                 (org-entry-get-multivalued-property (point) "CONTEXT")))
-            (when context
-              (setq items (append items context))))
-          (setq not-done (org-up-heading-safe)))))
-    (delete-dups items)))
-
-(defun ai-org-chat--get-tools ()
-  "Get list of tools specified for current and ancestor nodes."
-  (let ((items (org-entry-get-multivalued-property (point-min) "TOOLS")))
-    (save-excursion
-      (let ((not-done t))
-        (while not-done
-          (let ((context
-                 (org-entry-get-multivalued-property (point) "TOOLS")))
-            (when context
-              (setq items (append items context))))
-          (setq not-done (org-up-heading-safe)))))
-    (delete-dups items)))
-
-(defun ai-org-chat--get-context ()
-  "Get content of context buffers, files, and functions."
-  (let ((items (ai-org-chat--get-context-items)))
-    (mapconcat
-     (lambda (item)
-       (cond
-        ;; Check for existing buffer
-        ((get-buffer item)
-         (with-current-buffer (get-buffer item)
-           (format "%s\n%s\n" item
-                   (ai-org-chat--enclose-in-src-block
-                    (buffer-substring-no-properties (point-min) (point-max))
-                    major-mode))))
-        ;; Check for file (absolute path or relative to current directory)
-        ((file-exists-p item)
-         (ai-org-chat--get-file-content item))
-        ;; Check for file in project
-        ((and (project-current)
-              (let ((file (ai-org-chat--find-file-in-project item)))
-                (when file
-                  (ai-org-chat--get-file-content file)))))
-        ;; Check for Elisp function
-        ((functionp (intern-soft item))
-         (format "%s\n%s\n" item (funcall (intern-soft item))))
-        (t
-         (warn "Item %s not found as buffer, file, or function" item)
-         nil)))
-     items
-     "\n")))
-
-(defun ai-org-chat--find-file-in-project (filename)
-  "Find FILENAME in the current project.
-Returns the full path if found, nil otherwise."
-  (when-let* ((project (project-current))
-              (root (project-root project))
-              (files (project-files project)))
-    (seq-find (lambda (file)
-                (string= (file-name-nondirectory file) filename))
-              files)))
-
-
-(defun ai-org-chat--get-file-content (file)
-  "Get content of FILE, enclosed in appropriate src block."
-  (let* ((mode (ai-org-chat--get-mode-for-file file))
-         (content (with-temp-buffer
-                    (insert-file-contents file)
-                    (buffer-string))))
-    (format "%s\n%s\n" file
-            (ai-org-chat--enclose-in-src-block content mode))))
-
-(defun ai-org-chat--get-mode-for-file (filename)
-  "Determine the major mode that would be used for FILENAME."
-  (let ((mode (assoc-default filename auto-mode-alist 'string-match)))
-    (if (and mode (symbolp mode))
-        mode
-      'fundamental-mode)))
-
-(defun ai-org-chat--context ()
-  "Wrap MESSAGE in a system message, adding context if appropriate."
-  (let ((context (ai-org-chat--get-context)))
-    (when (not (string-empty-p context))
-      (format "Selected buffers contents:\n\n%s\n" context))))
-
+;;; Convenience functions for populating CONTEXT and TOOLS
 
 (defun ai-org-chat--add-context (items)
   "Helper function to add context to the current org node.
@@ -679,8 +697,6 @@ to filter the files (e.g., \"*.py\" for Python files)."
                  (project-root project)
                  wildcard)))))
 
-;;; Tools
-
 (defun ai-org-chat-add-tools ()
   "Add selected tools to the current org node's TOOLS property.
 Prompts for tool functions (which must be `llm-tool-function' objects) to add.
@@ -706,7 +722,7 @@ Only allows selection of symbols that are bound to `llm-tool-function' objects."
         (apply #'org-entry-put-multivalued-property (point) "TOOLS" new-tools)
         (message "Added %d tool(s)" (length selected-tools))))))
 
-;;; Convenience
+;;; Convenience function for creating a new branch
 
 ;;;###autoload
 (defun ai-org-chat-branch ()
@@ -733,6 +749,8 @@ ones."
       (org-insert-heading t nil t)
       (insert (concat ai-org-chat-user-name))
       (insert "\n"))))
+
+;;; Convenience functions for postprocessing AI responses
 
 ;;;###autoload
 (defun ai-org-chat-convert-markdown-blocks-to-org ()
@@ -983,7 +1001,7 @@ This function:
 
 (defun ai-org-chat--get-context-buffers ()
   "Get list of buffers specified in CONTEXT properties."
-  (let ((buffer-names (ai-org-chat--get-context-items)))
+  (let ((buffer-names (ai-org-chat--collect-context-sources)))
     (cl-remove-if-not #'identity
                       (mapcar (lambda (name)
                                 (or (get-buffer name)
@@ -1169,7 +1187,6 @@ Non-null prefix argument turns on the mode.
 Null prefix argument turns off the mode."
   :lighter " AI-Chat"
   :keymap ai-org-chat-minor-mode-map)
-
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
