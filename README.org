@@ -146,6 +146,10 @@ As a shortcut, the first step (narrowing the buffer) is not necessary if the cod
 
 * Case Studies
 
+** Project Chat
+
+A common workflow is to create a file =ai.org= in a project's src directory, run =M-x ai-org-chat-setup-buffer=, and use =ai-org-chat-add-project-files-context= to make the project's source code available as context.  This provides a dedicated space for asking the AI questions about the codebase.  To incorporate external dependencies or related files, create a new top-level heading and add the relevant files as context under that heading using =ai-org-chat-add-file-context=.
+
 ** AI Planner
 
 Here's an example of using functions as context to create an AI chat interface to your agenda. This setup gives the AI access to the current time, your diary, weekly agenda, and yearly project timeline. The setup assumes you use the diary, org-mode and the agenda for task management, with long-term travel-related items stored in a file called projects.org. It should be easy to adapt this setup to other ways of managing your schedule.
