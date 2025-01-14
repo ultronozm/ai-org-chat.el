@@ -26,6 +26,9 @@
 ;; This is a simple Emacs package that supports threaded AI chat
 ;; inside any org-mode buffer.  See the README for configuration and
 ;; usage instructions.
+;;
+;; To get started, use M-x ai-org-chat-select-model to choose an LLM model,
+;; then create a new chat with M-x ai-org-chat-new.
 
 ;;; Code:
 
@@ -33,19 +36,14 @@
 (require 'llm)
 (require 'json)
 
-(declare-function gptel-request "gptel")
-(defvar gptel-backend)
-(defvar gptel--openai)
-
 (defgroup ai-org-chat nil
   "Threaded chat with AI agent in org buffers."
   :group 'hypermedia)
 
-(defvar ai-org-chat-provider 'gptel
+(defvar ai-org-chat-provider nil
   "The LLM provider to use for AI chat.
-This should be either
-- the symbol `gptel', or
-- an instance of an LLM provider created using the `llm' package.")
+This should be either an instance of an LLM provider created using the
+`llm' package.")
 
 (defcustom ai-org-chat-user-name "User"
   "User name to insert into buffer."
@@ -100,30 +98,151 @@ insert local variables, and add initial heading."
 
 (defun ai-org-chat--get-entry-text ()
   "Get text of current entry, excluding properties drawer."
-  (let* ((content (save-excursion
-                    (org-back-to-heading)
-                    (buffer-substring-no-properties
-                     (point)
-                     (save-excursion
-                       (outline-next-heading)
-                       (point)))))
-         (lines (split-string content "\n"))
-         (drawer-start (cl-position-if
-                        (lambda (line)
-                          (string-match-p "^[ \t]*:PROPERTIES:[ \t]*$" line))
-                        lines))
-         (drawer-end (cl-position-if
-                      (lambda (line)
-                        (string-match-p "^[ \t]*:END:[ \t]*$" line))
-                      lines))
-         (lines-without-properties (if (and drawer-start drawer-end)
-                                       (append
-                                        (cl-subseq lines 0 drawer-start)
-                                        (cl-subseq lines (1+ drawer-end)))
-                                     lines))
-         (lines-without-properties-or-heading
-          (cdr lines-without-properties)))
-    (mapconcat 'identity lines-without-properties-or-heading "\n")))
+  (let ((region (ai-org-chat--get-entry-region)))
+    (buffer-substring-no-properties (car region) (cdr region))))
+
+(defcustom ai-org-chat-enable-images t
+  "Whether to enable image processing in AI chat conversations.
+When non-nil, standalone images in the conversation will be included
+in the context sent to the AI model.  When nil, images will be
+treated as regular org-mode links."
+  :type 'boolean
+  :group 'ai-org-chat)
+
+(defcustom ai-org-chat-enable-pdfs t
+  "Whether to enable PDF processing in AI chat conversations.
+When non-nil, standalone PDF links in the conversation will be included
+in the context sent to the AI model.  When nil, PDFs will be
+treated as regular org-mode links."
+  :type 'boolean
+  :group 'ai-org-chat)
+
+(defun ai-org-chat--split-entry-content (beg end)
+  "Split org content between BEG and END into a list of text and media parts.
+Only includes images and PDFs that appear standalone (on their own line with
+surrounding whitespace lines).  Images are only processed if
+`ai-org-chat-enable-images' is non-nil, and PDFs if `ai-org-chat-enable-pdfs'
+is non-nil."
+  (let ((ai-org-chat-enable-pdfs
+         (and ai-org-chat-enable-pdfs
+              (member 'pdf-input (llm-capabilities ai-org-chat-provider))))
+        (ai-org-chat-enable-images
+         (and ai-org-chat-enable-images
+              (member 'image-input (llm-capabilities ai-org-chat-provider)))))
+    (if (not (or ai-org-chat-enable-images ai-org-chat-enable-pdfs))
+        ;; If both images and PDFs are disabled, return all content as text
+        (list `(:text ,(buffer-substring-no-properties beg end)))
+      ;; Otherwise, process images and/or PDFs as before
+      (let ((parts nil)
+            (pos beg)
+            (file-extension-re (concat (if ai-org-chat-enable-images
+                                           (image-file-name-regexp)
+                                         "\\`\\`") ; never matches
+                                       (if ai-org-chat-enable-pdfs
+                                           "\\|\\.pdf\\'"
+                                         ""))))
+        (save-excursion
+          (goto-char beg)
+          ;; Find all media links
+          (while (re-search-forward "\\[\\[\\(?:file\\|attachment\\):" end t)
+            (let* ((link (org-element-lineage
+                          (org-element-context)
+                          'link t))
+                   (link-beg (org-element-begin link))
+                   (link-end (org-element-end link))
+                   (path (org-element-property :path link)))
+              (when (and path (string-match-p file-extension-re path))
+                ;; Check if the link is standalone
+                (save-excursion
+                  (goto-char link-beg)
+                  (beginning-of-line)
+                  (let* ((line-beg (point))
+                         (line-content-before (buffer-substring-no-properties
+                                               line-beg link-beg))
+                         (line-content-after (buffer-substring-no-properties
+                                              link-end
+                                              (line-end-position)))
+                         (prev-line-empty (save-excursion
+                                            (forward-line -1)
+                                            (looking-at-p "^[ \t]*$")))
+                         (next-line-empty (save-excursion
+                                            (forward-line 1)
+                                            (looking-at-p "^[ \t]*$"))))
+                    (when (and (string-match-p "^[ \t]*$" line-content-before)
+                               (string-match-p "^[ \t]*$" line-content-after)
+                               prev-line-empty
+                               next-line-empty)
+                      ;; Add text before the media, if any
+                      (when (< pos link-beg)
+                        (let ((text (buffer-substring-no-properties pos line-beg)))
+                          (unless (string-match-p "\\`[ \t\n]*\\'" text)
+                            (push `(:text ,text) parts))))
+                      ;; Add the media
+                      (let ((full-path (expand-file-name path)))
+                        (push (if (string-match-p "\\.pdf\\'" full-path)
+                                  ;; Handle PDF
+                                  `(:pdf ,(with-temp-buffer
+                                            (set-buffer-multibyte nil)
+                                            (insert-file-contents-literally full-path)
+                                            (buffer-string)))
+                                ;; Handle image
+                                `(:image ,(create-image full-path)))
+                              parts))
+                      (setq pos (save-excursion
+                                  (goto-char link-end)
+                                  (forward-line 1)
+                                  (point)))))))))
+          ;; Add remaining text, if any
+          (when (< pos end)
+            (let ((text (buffer-substring-no-properties pos end)))
+              (unless (string-match-p "\\`[ \t\n]*\\'" text)
+                (push `(:text ,text) parts))))
+          (nreverse parts))))))
+
+(defun ai-org-chat--prepare-message-content (beg end)
+  "Prepare message content from region BEG to END.
+Returns either a string for text-only content or an llm-multipart object
+for content with media (images and/or PDFs)."
+  (if (eq ai-org-chat-provider 'gptel)
+      (buffer-substring-no-properties beg end)
+    (let ((parts (ai-org-chat--split-entry-content beg end)))
+      (if (and (= (length parts) 1)
+               (eq (car (car parts)) :text))
+          ;; Text-only content
+          (plist-get (car parts) :text)
+        ;; Mixed content - convert to multipart
+        (apply #'llm-make-multipart
+               (mapcar (lambda (part)
+                         (pcase (car part)
+                           (:text (plist-get part :text))
+                           (:image (plist-get part :image))
+                           (:pdf (make-llm-media
+                                  :mime-type "application/pdf"
+                                  :data (plist-get part :pdf)))))
+                       parts))))))
+
+(defun ai-org-chat--get-entry-region ()
+  "Get region of current entry's content, excluding properties drawer.
+Returns (cons beg end) where beg is the position after the heading
+and end is the position before the next heading."
+  (save-excursion
+    (org-back-to-heading)
+    (let ((content-start (line-beginning-position 2))  ; Beginning of line after heading
+          (content-end (save-excursion
+                         (outline-next-heading)
+                         (point)))
+          prop-start prop-end)
+      ;; Find properties drawer if it exists
+      (goto-char content-start)
+      (when (looking-at-p "[ \t]*:PROPERTIES:[ \t]*$")
+        (setq prop-start (point))
+        (search-forward ":END:" content-end t)
+        (forward-line 1)
+        (setq prop-end (point)))
+      ;; If there was a properties drawer, return region after it
+      (if prop-end
+          (cons prop-end content-end)
+        (cons content-start content-end)))))
 
 (defun ai-org-chat--get-entry-heading-and-text ()
   "Get cons cell of current entry's clean heading and text."
@@ -132,12 +251,27 @@ insert local variables, and add initial heading."
 
 (defun ai-org-chat--get-conversation-history ()
   "Get list of conversation messages up to current entry.
-Each message is a cons cell (heading . body)."
-  (let ((messages '()))
-    (push (ai-org-chat--get-entry-heading-and-text) messages)
+Each message is a cons cell (heading . content) where content is
+either a string or llm-multipart object."
+  (let ((messages nil))
     (save-excursion
+      (let ((region (ai-org-chat--get-entry-region)))
+        (push (cons (org-get-heading t t)
+                    (if (eq ai-org-chat-provider 'gptel)
+                        (buffer-substring-no-properties
+                         (car region) (cdr region))
+                      (ai-org-chat--prepare-message-content
+                       (car region) (cdr region))))
+              messages))
       (while (org-up-heading-safe)
-        (push (ai-org-chat--get-entry-heading-and-text) messages)))
+        (let ((region (ai-org-chat--get-entry-region)))
+          (push (cons (org-get-heading t t)
+                      (if (eq ai-org-chat-provider 'gptel)
+                          (buffer-substring-no-properties
+                           (car region) (cdr region))
+                        (ai-org-chat--prepare-message-content
+                         (car region) (cdr region))))
+                messages))))
     messages))
 
 ;;; Collecting context and tools entries
@@ -328,33 +462,6 @@ have no effect."
   "AI name to insert into buffer."
   :type 'string)
 
-(defun ai-org-chat--format-messages (messages system-context)
-  "Format MESSAGES and SYSTEM-CONTEXT according to the selected provider."
-  (if (eq ai-org-chat-provider 'gptel)
-      (let ((formatted-messages
-             (mapcar (lambda (msg)
-                       (let ((role (if (equal (car msg) ai-org-chat-ai-name)
-                                       (if (and (boundp 'gptel-model)
-                                                (string-match-p "gemini" gptel-model))
-                                           "model"
-                                         "assistant")
-                                     "user")))
-                         (if (and (boundp 'gptel-model)
-                                  (string-match-p "gemini" gptel-model))
-                             `((role . ,role)
-                               (parts . ((text . ,(cdr msg)))))
-                           `((role . ,role)
-                             (content . ,(cdr msg))))))
-                     messages)))
-        (if (and (boundp 'gptel-backend)
-                 (boundp 'gptel-openai)
-                 (eq gptel-backend gptel--openai))
-            (cons `((role . "system")
-                    (content . ,system-context))
-                  formatted-messages)
-          formatted-messages))
-    (mapcar #'cdr messages)))
-
 (defun ai-org-chat--call-with-functions (provider prompt buffer point remaining-depth)
   "Call the LLM, optionally streaming output to buffer.
 PROVIDER supplies the LLM service.  PROMPT is the input for the LLM.
@@ -447,38 +554,30 @@ object with logging behavior added."
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
 (defun ai-org-chat--get-response (messages point system-context)
-  "Get response from the selected backend.
+  "Get response from the LLM provider.
 MESSAGES is the list of conversation messages.
 POINT is where to insert the response.
 SYSTEM-CONTEXT is the system message with context."
-  (if (eq ai-org-chat-provider 'gptel)
-      (progn
-        (unless (featurep 'gptel)
-          (require 'gptel))
-        (gptel-request
-            (ai-org-chat--format-messages messages system-context)
-          :position point
-          :stream t
-          :in-place t))
-    (let* ((tools (ai-org-chat--collect-tools))
-           (prompt (llm-make-chat-prompt
-                    (ai-org-chat--format-messages messages system-context)
-                    :context system-context
-                    :tools (mapcar (lambda (tool-symbol)
-                                     (ai-org-chat--create-logging-tool
-                                      (symbol-value (intern tool-symbol))
-                                      point))
-                                   tools))))
-      (ai-org-chat--call-with-functions
-       ai-org-chat-provider
-       prompt
-       (marker-buffer point)
-       (marker-position point)
-       ai-org-chat-max-recursion-depth))))
+  (let ((prompt (llm-make-chat-prompt
+                 (mapcar #'cdr messages)  ; just pass the content list
+                 :context system-context)))
+    (if ai-org-chat-streaming-p
+        (llm-chat-streaming-to-point ai-org-chat-provider prompt
+                                     (current-buffer) point
+                                     (lambda () nil))
+      (llm-chat-async ai-org-chat-provider prompt
+                      (lambda (response)
+                        (save-excursion
+                          (goto-char point)
+                          (insert response)))
+                      (lambda (err msg)
+                        (message "Error: %s - %s" err msg))))))
 
 (defun ai-org-chat-respond ()
   "Insert response from AI after current heading in org buffer."
   (interactive)
+  (unless ai-org-chat-provider
+    (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
   (let* ((system ai-org-chat-system-message)
          (context (ai-org-chat--assemble-full-context))
          (system-context (concat system "\n" context))
