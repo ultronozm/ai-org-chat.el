@@ -5,7 +5,7 @@
 ;; Author: Paul D. Nelson <nelson.paul.david@gmail.com>
 ;; Version: 0.1
 ;; URL: https://github.com/ultronozm/ai-org-chat.el
-;; Package-Requires: ((emacs "29.1") (llm "0.17.0") (ace-window "0.10.0"))
+;; Package-Requires: ((emacs "29.1") (llm "0.17.0") (ace-window "0.10.0") (transient "0.4.0"))
 ;; Keywords: convenience, ai, chat
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -35,6 +35,7 @@
 (require 'org)
 (require 'llm)
 (require 'json)
+(require 'transient)
 
 (defgroup ai-org-chat nil
   "Threaded chat with AI agent in org buffers."
@@ -572,23 +573,6 @@ SYSTEM-CONTEXT is the system message with context."
                           (insert response)))
                       (lambda (err msg)
                         (message "Error: %s - %s" err msg))))))
-
-(defun ai-org-chat-respond ()
-  "Insert response from AI after current heading in org buffer."
-  (interactive)
-  (unless ai-org-chat-provider
-    (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
-  (let* ((system ai-org-chat-system-message)
-         (context (ai-org-chat--assemble-full-context))
-         (system-context (concat system "\n" context))
-         (messages (ai-org-chat--get-conversation-history))
-         (point (save-excursion
-                  (ai-org-chat--create-heading ai-org-chat-ai-name)
-                  (insert "\n")
-                  (save-excursion
-                    (ai-org-chat--create-heading ai-org-chat-user-name))
-                  (point-marker))))
-    (ai-org-chat--get-response messages point system-context)))
 
 ;;; Setting up new chats
 
@@ -1271,6 +1255,77 @@ MODEL is a string key from `ai-org-chat-models'."
                :help "Convert Markdown style code blocks to org"]
               ["Replace Backticks" ai-org-chat-replace-backticks-with-equal-signs
                :help "Replace markdown backticks with org-mode verbatim quotes"])))
+
+;;; Transient interface
+
+(defclass ai-org-chat--model (transient-infix)
+  ((key         :initform "-m")
+   (argument    :initform "--model=")
+   (reader      :initform (lambda (_prompt _init _hist)
+                            (completing-read "Model: "
+                                             (mapcar #'car ai-org-chat-models))))))
+
+(transient-define-infix ai-org-chat--infix-model ()
+  "Select the model for ai-org-chat."
+  :class 'ai-org-chat--model
+  :description "Model"
+  :always-read t)
+
+(defun ai-org-chat--transient-convert-markdown ()
+  "Convert markdown blocks and keep transient active."
+  (interactive)
+  (ai-org-chat-convert-markdown-blocks-to-org)
+  (transient-setup 'ai-org-chat-menu))
+
+(transient-define-prefix ai-org-chat-menu ()
+  "Control ai-org-chat operations."
+  [:description
+   (lambda ()
+     (format "Model [%s]"
+             (if ai-org-chat-provider
+                 (slot-value ai-org-chat-provider 'chat-model)
+               "none")))
+   ("M" "Select model" ai-org-chat-select-model)]
+  [["Context"
+    ("b" "Add buffer" ai-org-chat-add-buffer-context)
+    ("v" "Add visible buffers" ai-org-chat-add-visible-buffers-context)
+    ("f" "Add file" ai-org-chat-add-file-context)
+    ("F" "Add function" ai-org-chat-add-function-context)
+    ("d" "Add directory files" ai-org-chat-add-directory-files-context)
+    ("p" "Add project files" ai-org-chat-add-project-files-context)]
+   ["Tools"
+    ("t" "Add tools" ai-org-chat-add-tools)]
+   ["Format"
+    ("m" "Convert markdown blocks" ai-org-chat--transient-convert-markdown)
+    ("q" "Replace backticks" ai-org-chat-replace-backticks-with-equal-signs)]
+   ["Operations"
+    ("B" "Branch conversation" ai-org-chat-branch)
+    ("c" "Compare source block" ai-org-chat-compare)]]
+  [["Actions"
+    ("RET" "Get response" ai-org-chat-respond)]])
+
+;;;###autoload
+(defun ai-org-chat-respond (&optional arg)
+  "Insert response from AI after current heading in org buffer.
+With prefix ARG, show the transient interface instead."
+  (interactive "P")
+  (if arg
+      (ai-org-chat-menu)
+    (unless ai-org-chat-provider
+      (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
+    (let* ((system ai-org-chat-system-message)
+           (context (ai-org-chat--assemble-full-context))
+           (system-context (concat system "\n" context))
+           (messages (ai-org-chat--get-conversation-history))
+           (point (save-excursion
+                    (ai-org-chat--create-heading ai-org-chat-ai-name)
+                    (insert "\n")
+                    (save-excursion
+                      (ai-org-chat--create-heading ai-org-chat-user-name))
+                    (point-marker))))
+      (ai-org-chat--get-response messages point system-context))))
+
+;;; Minor mode
 
 (defvar ai-org-chat-minor-mode-map
   (let ((map (make-sparse-keymap)))

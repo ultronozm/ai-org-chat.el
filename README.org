@@ -67,10 +67,11 @@ The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose i
 
 We provide the following commands:
 
-- =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.
-- =ai-org-chat-branch= (=C-c n=) :: This is a convenience function that creates a new conversation branch at point.
-- =ai-org-chat-compare= (=C-c e=) :: Launches an Ediff session to compare the org-mode block at point with the contents of another visible buffer.  This helps you review and apply AI-suggested changes to your codebase.  See [[Compare Feature]] for more details.
+- =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.  When activated with a prefix arguent (=C-u C-c <return>=), this commands activates a transient menu interface (available directly via =M-x ai-org-chat-menu=) for accessing all the other commands.
+- =ai-org-chat-branch= (=C-c n=) :: Create a new conversation branch at point.
+- =ai-org-chat-compare= (=C-c e=) :: Launch an Ediff session to compare the org-mode block at point with the contents of another visible buffer.  This helps you review and apply AI-suggested changes to your codebase.  See [[Compare Feature]] for more details.
 - =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks between (point) and (point-max) to org-mode code blocks.
+- =ai-org-chat-replace-backticks-with-equal-signs= :: Interactively replace backtick quotes with =org-mode= verbatim quotes.
 
 * Context and Tools
 
@@ -108,7 +109,7 @@ Example:
 
 ** Helper Commands
 
-While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), =ai-org-chat= provides some helper commands for managing context and tools:
+While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), =ai-org-chat= provides some helper commands for managing context and tools (which are also accessible via the transient menu mentioned above):
 
 - =ai-org-chat-add-buffer-context=: Add selected buffers as context.
 - =ai-org-chat-add-visible-buffers-context=: Add all visible buffers as context.
