@@ -1193,7 +1193,11 @@ directly."
     ("mistral" .
      (:package llm-ollama
                :provider make-llm-ollama
-               :chat-model "mistral:latest")))
+               :chat-model "mistral:latest"))
+    ("phi4" .
+     (:package llm-ollama
+               :provider make-llm-ollama
+               :chat-model "phi4")))
   "Alist of LLM models and their configurations for ai-org-chat.
 Each entry is of the form (NAME . PLIST) where NAME is a string
 identifying the model, and PLIST is a property list with the following keys:
