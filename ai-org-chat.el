@@ -807,6 +807,21 @@ Only allows selection of symbols that are bound to `llm-tool-function' objects."
 
 ;;; Convenience function for creating a new branch
 
+(defun ai-org-chat--create-user-heading ()
+  "Create new user heading at current position."
+  (org-insert-heading t nil t)
+  (insert (concat ai-org-chat-user-name))
+  (insert "\n"))
+
+(defun ai-org-chat--find-parent-ai-heading ()
+  "Find parent AI heading from current position.
+Returns non-nil if found, nil otherwise."
+  (let ((not-at-top t))
+    (while (and
+            (not (equal (org-get-heading t t) ai-org-chat-ai-name))
+            (setq not-at-top (org-up-heading-safe))))
+    not-at-top))
+
 ;;;###autoload
 (defun ai-org-chat-branch ()
   "Create new chat branch.
@@ -821,17 +836,21 @@ inserting a new user heading.  It behaves as follows:
 This allows for creating new conversation threads or continuing existing
 ones."
   (interactive)
-  (let ((not-at-top t))
-    (while
-        (and
-         (not (equal (org-get-heading t t) ai-org-chat-ai-name))
-         (setq not-at-top (org-up-heading-safe))))
-    (if not-at-top
-        (ai-org-chat--create-heading ai-org-chat-user-name)
-      (goto-char (point-max))
-      (org-insert-heading t nil t)
-      (insert (concat ai-org-chat-user-name))
-      (insert "\n"))))
+  (if (ai-org-chat--find-parent-ai-heading)
+      (ai-org-chat--create-heading ai-org-chat-user-name)
+    (goto-char (point-max))
+    (ai-org-chat--create-user-heading)))
+
+;;;###autoload
+(defun ai-org-chat-branch-top-level ()
+  "Create new chat branch at top level of buffer.
+This function first navigates to the beginning of the buffer,
+widening if necessary, then creates a new top-level chat branch."
+  (interactive)
+  (save-restriction
+    (widen)
+    (goto-char (point-max))
+    (ai-org-chat--create-user-heading)))
 
 ;;; Convenience functions for postprocessing AI responses
 
@@ -1299,7 +1318,8 @@ MODEL is a string key from `ai-org-chat-models'."
     ("m" "Convert markdown blocks" ai-org-chat--transient-convert-markdown)
     ("q" "Replace backticks" ai-org-chat-replace-backticks-with-equal-signs)]
    ["Operations"
-    ("B" "Branch conversation" ai-org-chat-branch)
+    ("B" "New branch" ai-org-chat-branch)
+    ("T" "New top-level branch" ai-org-chat-branch-top-level)
     ("c" "Compare source block" ai-org-chat-compare)]]
   [["Actions"
     ("RET" "Get response" ai-org-chat-respond)]])
