@@ -818,14 +818,26 @@ With prefix argument ARG, immediately call
   (interactive "P")
   (let ((original-buffer (current-buffer)))
     (if (region-active-p)
-        (let* ((source-buf (ai-org-chat--make-source-buffer
-                            (region-beginning) (region-end)))
-               (chat-buf (ai-org-chat-new-empty)))
-          (setq ai-org-chat--source-buffer source-buf)
-          (add-hook 'kill-buffer-hook
-                    (lambda () (kill-buffer ai-org-chat--source-buffer))
-                    nil t)
-          (ai-org-chat--add-context (list (buffer-name source-buf))))
+        (let* ((reg-beg (region-beginning))
+               (reg-end (region-end)))
+          ;; Deactivate the mark but remember the region
+          (deactivate-mark)
+          (let ((source-buf (ai-org-chat--make-source-buffer reg-beg reg-end)))
+            ;; Create chat buffer first
+            (ai-org-chat-new-empty)
+            (setq ai-org-chat--source-buffer source-buf)
+            (add-hook 'kill-buffer-hook
+                      (lambda ()
+                        (when (buffer-live-p ai-org-chat--source-buffer)
+                          (kill-buffer ai-org-chat--source-buffer)))
+                      nil t)
+            (delete-other-windows)
+            (let ((left-window (selected-window))
+                  (right-window (split-window-horizontally)))
+              (set-window-buffer left-window source-buf)
+              (set-window-buffer right-window (current-buffer))
+              (select-window right-window))
+            (ai-org-chat--add-context (list (buffer-name source-buf)))))
       (ai-org-chat-new-empty))
     (when arg
       (save-excursion
