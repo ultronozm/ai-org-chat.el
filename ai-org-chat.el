@@ -574,69 +574,6 @@ SYSTEM-CONTEXT is the system message with context."
                       (lambda (err msg)
                         (message "Error: %s - %s" err msg))))))
 
-;;; Setting up new chats
-
-(defun ai-org-chat-new-empty ()
-  "Create new AI chat buffer.
-Create org buffer with timestamped filename and set it up for AI chat."
-  (interactive)
-  (let* ((dir ai-org-chat-dir)
-         (file (format-time-string "%Y%m%dT%H%M%S--ai-chat.org"))
-         (path (expand-file-name file dir)))
-    (unless (file-directory-p dir)
-      (make-directory dir t))
-    (find-file path)
-    (ai-org-chat-setup-buffer)))
-
-(defun ai-org-chat--ensure-trailing-newline (content)
-  "Ensure that CONTENT ends with a newline."
-  (if (string-match "\n\\'" content)
-      content
-    (concat content "\n")))
-
-(defun ai-org-chat-new-region (beg end)
-  "Start new AI chat, quoting region between BEG and END.
-Send user to an AI chat buffer.  Copy current region contents into that buffer."
-  (interactive "r")
-  (let* ((content (ai-org-chat--ensure-trailing-newline
-                   (buffer-substring-no-properties beg end)))
-         (region-contents
-          (ai-org-chat--wrap-org
-           (list :name ""
-                 :mode major-mode
-                 :language (replace-regexp-in-string
-                            "-mode$" "" (symbol-name major-mode))
-                 :content content))))
-    (ai-org-chat-new-empty)
-    (save-excursion
-      (newline)
-      (insert region-contents))))
-
-;;;###autoload
-(defun ai-org-chat-new (arg)
-  "Start a new AI chat buffer, optionally including the active region.
-
-If a region is selected, its contents are copied into a new buffer
-within an appropriate source block.  Otherwise, creates an empty buffer.
-
-The new buffer is created with a timestamped filename in
-`ai-org-chat-dir', and set up with `org-mode' and
-`ai-org-chat-minor-mode' enabled.
-
-With prefix argument ARG, immediately call
-`ai-org-chat-add-visible-buffers-context' on the new file, with point
-positioned at the top of the document."
-  (interactive "P")
-  (let ((original-buffer (current-buffer)))
-    (if (region-active-p)
-        (ai-org-chat-new-region (region-beginning) (region-end))
-      (ai-org-chat-new-empty))
-    (when arg
-      (save-excursion
-        (goto-char (point-min))
-        (ai-org-chat-add-visible-buffers-context)
-        (ai-org-chat--add-context (list (buffer-name original-buffer)))))))
-
 ;;; Convenience functions for populating CONTEXT and TOOLS
 
 (defun ai-org-chat--add-context (items)
@@ -804,6 +741,91 @@ Only allows selection of symbols that are bound to `llm-tool-function' objects."
              (new-tools (delete-dups (append current-tools selected-tools))))
         (apply #'org-entry-put-multivalued-property (point) "TOOLS" new-tools)
         (message "Added %d tool(s)" (length selected-tools))))))
+
+;;; Setting up new chats
+
+(defun ai-org-chat-new-empty ()
+  "Create new AI chat buffer.
+Create org buffer with timestamped filename and set it up for AI chat."
+  (interactive)
+  (let* ((dir ai-org-chat-dir)
+         (file (format-time-string "%Y%m%dT%H%M%S--ai-chat.org"))
+         (path (expand-file-name file dir)))
+    (unless (file-directory-p dir)
+      (make-directory dir t))
+    (find-file path)
+    (ai-org-chat-setup-buffer)))
+
+(defun ai-org-chat--ensure-trailing-newline (content)
+  "Ensure that CONTENT ends with a newline."
+  (if (string-match "\n\\'" content)
+      content
+    (concat content "\n")))
+
+(defun ai-org-chat-new-region (beg end)
+  "Start new AI chat, quoting region between BEG and END.
+Send user to an AI chat buffer.  Copy current region contents into that buffer."
+  (interactive "r")
+  (let* ((content (ai-org-chat--ensure-trailing-newline
+                   (buffer-substring-no-properties beg end)))
+         (region-contents
+          (ai-org-chat--wrap-org
+           (list :name ""
+                 :mode major-mode
+                 :language (replace-regexp-in-string
+                            "-mode$" "" (symbol-name major-mode))
+                 :content content))))
+    (ai-org-chat-new-empty)
+    (save-excursion
+      (newline)
+      (insert region-contents))))
+
+(defvar-local ai-org-chat--source-buffer nil
+  "Indirect buffer holding source text for chat context.")
+
+(defun ai-org-chat--make-source-buffer (beg end)
+  "Create an indirect buffer for region BEG END of current buffer."
+  (let* ((source-buf (current-buffer))
+         (buf-name (format "*ai-org-chat-source-%s-%s*"
+                           (buffer-name source-buf)
+                           (format-time-string "%Y%m%dT%H%M%S")))
+         (indirect-buf (make-indirect-buffer
+                        source-buf buf-name t 'share-markers)))
+    (with-current-buffer indirect-buf
+      (narrow-to-region beg end))
+    indirect-buf))
+
+;;;###autoload
+(defun ai-org-chat-new (arg)
+  "Start a new AI chat buffer, optionally including the active region.
+
+If a region is selected, its contents are added to the chat context
+via an indirect buffer, maintaining a live connection to the source.
+Otherwise, creates an empty buffer.
+
+The new buffer is created with a timestamped filename in
+`ai-org-chat-dir', and set up with `org-mode' and
+`ai-org-chat-minor-mode' enabled.
+
+With prefix argument ARG, immediately call
+`ai-org-chat-add-visible-buffers-context' on the new file."
+  (interactive "P")
+  (let ((original-buffer (current-buffer)))
+    (if (region-active-p)
+        (let* ((source-buf (ai-org-chat--make-source-buffer
+                            (region-beginning) (region-end)))
+               (chat-buf (ai-org-chat-new-empty)))
+          (setq ai-org-chat--source-buffer source-buf)
+          (add-hook 'kill-buffer-hook
+                    (lambda () (kill-buffer ai-org-chat--source-buffer))
+                    nil t)
+          (ai-org-chat--add-context (list (buffer-name source-buf))))
+      (ai-org-chat-new-empty))
+    (when arg
+      (save-excursion
+        (goto-char (point-min))
+        (ai-org-chat-add-visible-buffers-context)
+        (ai-org-chat--add-context (list (buffer-name original-buffer)))))))
 
 ;;; Convenience function for creating a new branch
 
