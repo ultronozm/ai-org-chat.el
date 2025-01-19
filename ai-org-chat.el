@@ -174,7 +174,7 @@ is non-nil."
                                prev-line-empty
                                next-line-empty)
                       ;; Add text before the media, if any
-                      (when (< pos link-beg)
+                      (when (< pos line-beg)
                         (let ((text (buffer-substring-no-properties pos line-beg)))
                           (unless (string-match-p "\\`[ \t\n]*\\'" text)
                             (push `(:text ,text) parts))))
