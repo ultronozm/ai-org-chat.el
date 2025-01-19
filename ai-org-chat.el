@@ -560,14 +560,47 @@ object with logging behavior added."
 (defvar ai-org-chat-max-recursion-depth 10
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
+(defun ai-org-chat--prepare-source-content ()
+  "Prepare the source buffer content for inclusion in messages.
+Returns the wrapped content string if there's a live source buffer,
+nil otherwise."
+  (when (and ai-org-chat--source-buffer
+             (buffer-live-p ai-org-chat--source-buffer))
+    (with-current-buffer ai-org-chat--source-buffer
+      (let ((content-plist
+             (list :name "Active region"
+                   :mode major-mode
+                   :language (replace-regexp-in-string
+                              "-mode$" "" (symbol-name major-mode))
+                   :content (buffer-substring-no-properties
+                             (point-min) (point-max)))))
+        (concat ai-org-chat--active-region-prefix
+                (funcall ai-org-chat-content-wrapper content-plist))))))
+
 (defun ai-org-chat--get-response (messages point system-context)
   "Get response from the LLM provider.
 MESSAGES is the list of conversation messages.
 POINT is where to insert the response.
 SYSTEM-CONTEXT is the system message with context."
-  (let ((prompt (llm-make-chat-prompt
-                 (mapcar #'cdr messages)  ; just pass the content list
-                 :context system-context)))
+  (let* ((source-content (and (> (length messages) 1)
+                              (ai-org-chat--prepare-source-content)))
+         (final-messages
+          (if source-content
+              (let* ((all-but-last (butlast messages))
+                     (last-msg (car (last messages)))
+                     (last-content (cdr last-msg))
+                     (new-last-content
+                      (if (stringp last-content)
+                          (concat last-content "\n\n" source-content)
+                        (llm-make-multipart
+                         (append (llm-multipart-parts last-content)
+                                 (list source-content))))))
+                (append all-but-last
+                        (list (cons (car last-msg) new-last-content))))
+            messages))
+         (prompt (llm-make-chat-prompt
+                  (mapcar #'cdr final-messages)
+                  :context system-context)))
     (if ai-org-chat-streaming-p
         (llm-chat-streaming-to-point ai-org-chat-provider prompt
                                      (current-buffer) point
@@ -782,8 +815,12 @@ Send user to an AI chat buffer.  Copy current region contents into that buffer."
       (newline)
       (insert region-contents))))
 
+(defconst ai-org-chat--active-region-prefix
+  "Active region contents:\n\n"
+  "Prefix text used when including active region contents in messages.")
+
 (defvar-local ai-org-chat--source-buffer nil
-  "Indirect buffer holding the user’s region for this AI chat.
+  "Indirect buffer holding the user's region for this AI chat.
 If non-nil, it is killed when this conversation buffer is killed.  This
 variable is populated when the user calls `ai-org-chat-new' with an
 active region.  We kill it automatically when the conversation buffer is
@@ -805,9 +842,9 @@ killed.")
 (defun ai-org-chat-new (arg)
   "Start a new AI chat buffer, optionally including the active region.
 
-If a region is selected, its contents are added to the chat context
-via an indirect buffer, maintaining a live connection to the source.
-Otherwise, creates an empty buffer.
+If a region is selected, its contents are both copied into the chat buffer
+and maintained as a live connection via an indirect buffer.  Otherwise,
+creates an empty buffer.
 
 The new buffer is created with a timestamped filename in
 `ai-org-chat-dir', and set up with `org-mode' and
@@ -819,12 +856,22 @@ With prefix argument ARG, immediately call
   (let ((original-buffer (current-buffer)))
     (if (region-active-p)
         (let* ((reg-beg (region-beginning))
-               (reg-end (region-end)))
-          ;; Deactivate the mark but remember the region
+               (reg-end (region-end))
+               (region-contents
+                (ai-org-chat--ensure-trailing-newline
+                 (buffer-substring-no-properties reg-beg reg-end)))
+               (wrapped-region-contents
+                (ai-org-chat--wrap-org
+                 (list :name ""
+                       :mode major-mode
+                       :language (replace-regexp-in-string
+                                  "-mode$" "" (symbol-name major-mode))
+                       :content region-contents))))
           (deactivate-mark)
           (let ((source-buf (ai-org-chat--make-source-buffer reg-beg reg-end)))
-            ;; Create chat buffer first
             (ai-org-chat-new-empty)
+            (goto-char (point-max))
+            (insert wrapped-region-contents "\n")
             (setq ai-org-chat--source-buffer source-buf)
             (add-hook 'kill-buffer-hook
                       (lambda ()
@@ -836,8 +883,7 @@ With prefix argument ARG, immediately call
                   (right-window (split-window-horizontally)))
               (set-window-buffer left-window source-buf)
               (set-window-buffer right-window (current-buffer))
-              (select-window right-window))
-            (ai-org-chat--add-context (list (buffer-name source-buf)))))
+              (select-window right-window))))
       (ai-org-chat-new-empty))
     (when arg
       (save-excursion
@@ -1154,21 +1200,27 @@ This function:
 
 ;;;###autoload
 (defun ai-org-chat-compare ()
-  "Compare a source block with a selected window using ediff.
-If the source block is a single function or class definition, it tries
-to find a matching definition in other visible buffers and compares them
-directly."
+  "Compare a source block with appropriate content using ediff.
+If there's a live source buffer, compares against that.  Otherwise,
+if the source block is a single function or class definition, tries
+to find a matching definition in other visible buffers and compares
+them directly."
   (interactive)
   (let* ((element (org-element-at-point))
          (type (org-element-type element)))
     (when (memq type '(src-block example-block))
       (let ((org-src-window-setup 'current-window)
-            (aux-bufs (ai-org-chat--get-context-buffers)))
+            (aux-bufs (ai-org-chat--get-context-buffers))
+            (src-buf ai-org-chat--source-buffer))
         (condition-case err
             (progn
               (tab-duplicate)
               (org-edit-special)
-              (ai-org-chat--compare-impl (current-buffer) aux-bufs))
+              (if (and src-buf
+                       (buffer-live-p src-buf))
+                  (ai-org-chat--setup-ediff src-buf
+                                            (current-buffer))
+                (ai-org-chat--compare-impl (current-buffer) aux-bufs)))
           (error
            (tab-bar-close-tab)
            (signal (car err) (cdr err))))))))
