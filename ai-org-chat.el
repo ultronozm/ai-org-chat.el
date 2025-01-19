@@ -411,6 +411,12 @@ content-plist with :name, :mode, :language, and :content keys."
   :type '(repeat function)
   :group 'ai-org-chat)
 
+(defun ai-org-chat--ensure-trailing-newline (content)
+  "Ensure that CONTENT ends with a newline."
+  (if (string-match "\n\\'" content)
+      content
+    (concat content "\n")))
+
 (defun ai-org-chat--extract-source-content (source)
   "Get wrapped content from SOURCE.
 SOURCE can be a buffer name, file path, or function name.  Return a
@@ -744,6 +750,7 @@ Only allows selection of symbols that are bound to `llm-tool-function' objects."
 
 ;;; Setting up new chats
 
+;;;###autoload
 (defun ai-org-chat-new-empty ()
   "Create new AI chat buffer.
 Create org buffer with timestamped filename and set it up for AI chat."
@@ -756,12 +763,7 @@ Create org buffer with timestamped filename and set it up for AI chat."
     (find-file path)
     (ai-org-chat-setup-buffer)))
 
-(defun ai-org-chat--ensure-trailing-newline (content)
-  "Ensure that CONTENT ends with a newline."
-  (if (string-match "\n\\'" content)
-      content
-    (concat content "\n")))
-
+;;;###autoload
 (defun ai-org-chat-new-region (beg end)
   "Start new AI chat, quoting region between BEG and END.
 Send user to an AI chat buffer.  Copy current region contents into that buffer."
@@ -781,10 +783,14 @@ Send user to an AI chat buffer.  Copy current region contents into that buffer."
       (insert region-contents))))
 
 (defvar-local ai-org-chat--source-buffer nil
-  "Indirect buffer holding source text for chat context.")
+  "Indirect buffer holding the user’s region for this AI chat.
+If non-nil, it is killed when this conversation buffer is killed.  This
+variable is populated when the user calls `ai-org-chat-new' with an
+active region.  We kill it automatically when the conversation buffer is
+killed.")
 
 (defun ai-org-chat--make-source-buffer (beg end)
-  "Create an indirect buffer for region BEG END of current buffer."
+  "Create an indirect buffer for region BEG..END of current buffer."
   (let* ((source-buf (current-buffer))
          (buf-name (format "*ai-org-chat-source-%s-%s*"
                            (buffer-name source-buf)
