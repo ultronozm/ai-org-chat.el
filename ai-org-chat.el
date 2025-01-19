@@ -1317,7 +1317,9 @@ MODEL is a string key from `ai-org-chat-models'."
               ["Convert Markdown Blocks" ai-org-chat-convert-markdown-blocks-to-org
                :help "Convert Markdown style code blocks to org"]
               ["Replace Backticks" ai-org-chat-replace-backticks-with-equal-signs
-               :help "Replace markdown backticks with org-mode verbatim quotes"])))
+               :help "Replace markdown backticks with org-mode verbatim quotes"])
+        ["Copy Conversation" ai-org-chat-copy-conversation-to-clipboard
+         :help "Copy the conversation as formatted XML to clipboard"]))
 
 ;;; Transient interface
 
@@ -1364,7 +1366,8 @@ MODEL is a string key from `ai-org-chat-models'."
    ["Operations"
     ("B" "New branch" ai-org-chat-branch)
     ("T" "New top-level branch" ai-org-chat-branch-top-level)
-    ("c" "Compare source block" ai-org-chat-compare)]]
+    ("c" "Compare source block" ai-org-chat-compare)
+    ("y" "Copy conversation" ai-org-chat-copy-conversation-to-clipboard)]]
   [["Actions"
     ("RET" "Get response" ai-org-chat-respond)]])
 
@@ -1405,6 +1408,38 @@ Non-null prefix argument turns on the mode.
 Null prefix argument turns off the mode."
   :lighter " AI-Chat"
   :keymap ai-org-chat-minor-mode-map)
+
+;;; String capture
+
+(defun ai-org-chat-copy-conversation-to-clipboard ()
+  "Copy the current conversation as formatted XML to the clipboard.
+This includes the system message, context, and all exchanges between
+user and assistant."
+  (interactive)
+  (let* ((system-msg ai-org-chat-system-message)
+         (context (ai-org-chat--assemble-full-context))
+         (messages (ai-org-chat--get-conversation-history))
+         (formatted-string
+          (concat
+           "System Message and Context:\n\n"
+           system-msg "\n\n"
+           (if context (concat context "\n\n") "")
+           "Conversation:\n\n"
+           (mapconcat
+            (lambda (msg)
+              (let ((heading (car msg))
+                    (content (cdr msg)))
+                (format "<exchange>\n  <role>%s</role>\n  <content>\n%s\n  </content>\n</exchange>"
+                        (if (equal heading ai-org-chat-ai-name)
+                            "assistant"
+                          "user")
+                        (if (stringp content)
+                            content
+                          (format "%S" content)))))
+            messages
+            "\n\n"))))
+    (kill-new formatted-string)
+    (message "Conversation copied to clipboard")))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
