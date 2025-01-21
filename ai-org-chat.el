@@ -1268,6 +1268,31 @@ them directly."
                :provider make-llm-claude
                :key-env "ANTHROPIC_KEY"
                :chat-model "claude-3-opus-20240229"))
+    ("deepseek-chat" .
+     (:package llm-openai
+               :provider (lambda (&rest args)
+                           (apply #'make-llm-openai-compatible
+                                  :url "https://api.deepseek.com/"
+                                  args))
+               :key-env "DEEPSEEK_KEY"
+               :chat-model "deepseek-chat"))
+    ("deepseek-coder" .
+     (:package llm-openai
+               :provider (lambda (&rest args)
+                           (apply #'make-llm-openai-compatible
+                                  :url "https://api.deepseek.com/"
+                                  args))
+               :key-env "DEEPSEEK_KEY"
+               :chat-model "deepseek-coder"))
+    ("deepseek-reasoner" .
+     (:package llm-openai
+               :provider (lambda (&rest args)
+                           (apply #'make-llm-openai-compatible
+                                  :url "https://api.deepseek.com/"
+                                  args))
+               :key-env "DEEPSEEK_KEY"
+               :chat-model "deepseek-reasoner"))
+
     ("gemini-1.5-pro-latest" .
      (:package llm-gemini
                :provider make-llm-gemini
