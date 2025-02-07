@@ -595,43 +595,6 @@ nil otherwise."
         (concat ai-org-chat--active-region-prefix
                 (funcall ai-org-chat-content-wrapper content-plist))))))
 
-(defun ai-org-chat--streaming-to-point (provider prompt buffer point finish-callback)
-  "Stream the llm output of PROMPT to POINT in BUFFER.
-Like `llm-chat-streaming-to-point', but with org-mode heading protection.
-PROVIDER is the backend provider of the LLM functionality.
-FINISH-CALLBACK is called with no arguments when the output has finished."
-  (with-current-buffer buffer
-    (save-excursion
-      (let ((start (make-marker))
-            (end (make-marker)))
-        (set-marker start point)
-        (set-marker end point)
-        (set-marker-insertion-type start nil)
-        (set-marker-insertion-type end t)
-        (cl-flet ((insert-text (text)
-                    ;; Process and insert the new text between the markers
-                    (with-current-buffer (marker-buffer start)
-                      (save-excursion
-                        (goto-char start)
-                        (let* ((current-text
-                                (buffer-substring-no-properties start end))
-                               (processed-text
-                                (ai-org-chat--process-response-text text start))
-                               (common-prefix
-                                (fill-common-string-prefix current-text processed-text))
-                               (prefix-length (length common-prefix)))
-                          ;; Skip over common prefix
-                          (when (> prefix-length 0)
-                            (goto-char (+ start prefix-length)))
-                          (delete-region (point) end)
-                          ;; Insert processed text, minus common prefix
-                          (insert (substring processed-text prefix-length)))))))
-          (llm-chat-streaming provider prompt
-                              (lambda (text) (insert-text text))
-                              (lambda (text) (insert-text text)
-                                (funcall finish-callback))
-                              (lambda (_ msg) (error "Error calling the LLM: %s" msg))))))))
-
 (defun ai-org-chat--get-response (messages point system-context)
   "Get response from the LLM provider.
 MESSAGES is the list of conversation messages.
@@ -657,9 +620,10 @@ SYSTEM-CONTEXT is the system message with context."
                   (mapcar #'cdr final-messages)
                   :context system-context)))
     (if ai-org-chat-streaming-p
-        (ai-org-chat--streaming-to-point ai-org-chat-provider prompt
-                                         (current-buffer) point
-                                         (lambda () nil))
+        (llm-chat-streaming-to-point
+         ai-org-chat-provider prompt (current-buffer) point
+         (lambda () nil)
+         :processor #'ai-org-chat--process-response-text)
       (llm-chat-async ai-org-chat-provider prompt
                       (lambda (response)
                         (save-excursion
