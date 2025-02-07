@@ -97,10 +97,25 @@ insert local variables, and add initial heading."
 
 ;;; Collecting messages
 
+(defun ai-org-chat--clean-text (text)
+  "Clean TEXT by removing protective commas before org headings.
+This function removes commas that were added by
+`ai-org-chat--process-response-text' to protect org-mode structure:
+- removes comma if text starts with ',*'
+- removes comma in all occurrences of '\n,*'
+
+This is used when preparing conversation history to send to the LLM."
+  (let ((cleaned-text
+         (if (string-match-p "\\`,[*]" text)
+             (substring text 1)
+           text)))
+    (replace-regexp-in-string "\n,\\(*\\)" "\n\\1" cleaned-text)))
+
 (defun ai-org-chat--get-entry-text ()
   "Get text of current entry, excluding properties drawer."
   (let ((region (ai-org-chat--get-entry-region)))
-    (buffer-substring-no-properties (car region) (cdr region))))
+    (ai-org-chat--clean-text
+     (buffer-substring-no-properties (car region) (cdr region)))))
 
 (defcustom ai-org-chat-enable-images t
   "Whether to enable image processing in AI chat conversations.
