@@ -243,19 +243,16 @@ Returns (cons beg end) where beg is the position after the heading
 and end is the position before the next heading."
   (save-excursion
     (org-back-to-heading)
-    (let ((content-start (line-beginning-position 2))  ; Beginning of line after heading
+    (let ((content-start (line-beginning-position 2))
           (content-end (save-excursion
                          (outline-next-heading)
                          (point)))
-          prop-start prop-end)
-      ;; Find properties drawer if it exists
+          prop-end)
       (goto-char content-start)
       (when (looking-at-p "[ \t]*:PROPERTIES:[ \t]*$")
-        (setq prop-start (point))
         (search-forward ":END:" content-end t)
         (forward-line 1)
         (setq prop-end (point)))
-      ;; If there was a properties drawer, return region after it
       (if prop-end
           (cons prop-end content-end)
         (cons content-start content-end)))))
@@ -552,9 +549,9 @@ PROVIDER is the LLM service provider."
 
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
-TOOL is an llm-tool-function object.  Returns a new llm-tool-function
+TOOL is an llm-tool object.  Returns a new llm-tool
 object with logging behavior added."
-  (let* ((orig-func (llm-tool-function-function tool))
+  (let* ((orig-func (llm-tool-function tool))
          (tool-marker (make-marker)))
     (set-marker tool-marker (marker-position marker))
     (set-marker-insertion-type tool-marker t)
@@ -568,7 +565,7 @@ object with logging behavior added."
                           (save-excursion
                             (goto-char tool-marker)
                             (insert ":TOOL_CALL:\n"
-                                    (json-encode `((name . ,(llm-tool-function-name tool))
+                                    (json-encode `((name . ,(llm-tool-name tool))
                                                    (arguments . ,(cdr args))))
                                     "\n:END:\n")
                             (insert ":TOOL_RESULT:\n"
@@ -579,10 +576,10 @@ object with logging behavior added."
                  result)))))
       (llm-make-tool-function
        :function wrapped-func
-       :name (llm-tool-function-name tool)
-       :description (llm-tool-function-description tool)
-       :args (llm-tool-function-args tool)
-       :async (llm-tool-function-async tool)))))
+       :name (llm-tool-name tool)
+       :description (llm-tool-description tool)
+       :args (llm-tool-args tool)
+       :async (llm-tool-async tool)))))
 
 (defun ai-org-chat--create-heading (heading)
   "Create new subtree with HEADING as heading."
