@@ -656,39 +656,6 @@ nil otherwise."
         (concat ai-org-chat--active-region-prefix
                 (funcall ai-org-chat-content-wrapper content-plist))))))
 
-(defun ai-org-chat--get-response (messages point system-context)
-  "Get response from the LLM provider.
-MESSAGES is the list of conversation messages.
-POINT is where to insert the response.
-SYSTEM-CONTEXT is the system message with context."
-  (let* ((tools (ai-org-chat--collect-tools))
-         (wrapped-tools (mapcar (lambda (tool)
-                                  (ai-org-chat--create-logging-tool tool point))
-                                tools))
-         (source-content (and (> (length messages) 1)
-                              (ai-org-chat--prepare-source-content)))
-         (final-messages
-          (if source-content
-              (let* ((all-but-last (butlast messages))
-                     (last-msg (car (last messages)))
-                     (last-content (cdr last-msg))
-                     (new-last-content
-                      (if (stringp last-content)
-                          (concat last-content "\n\n" source-content)
-                        (llm-make-multipart
-                         (append (llm-multipart-parts last-content)
-                                 (list source-content))))))
-                (append all-but-last
-                        (list (cons (car last-msg) new-last-content))))
-            messages))
-         (prompt (llm-make-chat-prompt
-                  (mapcar #'cdr final-messages)
-                  :context system-context
-                  :tools wrapped-tools)))
-    (ai-org-chat--call-with-functions
-     ai-org-chat-provider prompt (current-buffer) point
-     ai-org-chat-max-recursion-depth)))
-
 ;;; Convenience functions for populating CONTEXT and TOOLS
 
 (defun ai-org-chat--add-context (items)
@@ -1504,21 +1471,63 @@ MODEL is a string key from `ai-org-chat-models'."
   "Insert response from AI after current heading in org buffer.
 With prefix ARG, show the transient interface instead."
   (interactive "P")
-  (if arg
-      (ai-org-chat-menu)
-    (unless ai-org-chat-provider
-      (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
-    (let* ((system ai-org-chat-system-message)
-           (context (ai-org-chat--assemble-full-context))
-           (system-context (concat system "\n" context))
-           (messages (ai-org-chat--get-conversation-history))
-           (point (save-excursion
-                    (ai-org-chat--create-heading ai-org-chat-ai-name)
-                    (insert "\n")
-                    (save-excursion
-                      (ai-org-chat--create-heading ai-org-chat-user-name))
-                    (point-marker))))
-      (ai-org-chat--get-response messages point system-context))))
+  (when arg
+    (ai-org-chat-menu)
+    (cl-return-from ai-org-chat-respond))
+
+  (unless ai-org-chat-provider
+    (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
+
+  (let* ((system ai-org-chat-system-message)
+         (context (ai-org-chat--assemble-full-context))
+         (system-context (concat system "\n" context))
+         (messages (ai-org-chat--get-conversation-history))
+         (start (save-excursion
+                  (ai-org-chat--create-heading ai-org-chat-ai-name)
+                  (insert "\n")
+                  (save-excursion
+                    (ai-org-chat--create-heading ai-org-chat-user-name))
+                  (point-marker)))
+         (end (copy-marker start t))
+         (tools (ai-org-chat--collect-tools))
+         (wrapped-tools (mapcar (lambda (tool)
+                                  (ai-org-chat--create-logging-tool tool start))
+                                tools))
+         (prompt (llm-make-chat-prompt
+                  (mapcar #'cdr messages)
+                  :context system-context
+                  :tools wrapped-tools)))
+
+    (if ai-org-chat-streaming-p
+        (llm-chat-streaming
+         ai-org-chat-provider prompt
+         (lambda (response)
+           (ai-org-chat--insert-text start end response))
+         (lambda (response)
+           (ai-org-chat--handle-final-response
+            prompt response start end
+            ai-org-chat-max-recursion-depth ai-org-chat-provider))
+         (lambda (err msg)
+           (with-current-buffer (marker-buffer start)
+             (goto-char start)
+             (insert (format "\nError: %s - %s\n" err msg)))
+           (ai-org-chat--handle-final-response
+            prompt (format "Error: %s - %s" err msg)
+            start end ai-org-chat-max-recursion-depth ai-org-chat-provider)))
+
+      (llm-chat-async
+       ai-org-chat-provider prompt
+       (lambda (response)
+         (ai-org-chat--handle-final-response
+          prompt response start end
+          ai-org-chat-max-recursion-depth ai-org-chat-provider))
+       (lambda (err msg)
+         (with-current-buffer (marker-buffer start)
+           (goto-char start)
+           (insert (format "\nError: %s - %s\n" err msg)))
+         (ai-org-chat--handle-final-response
+          prompt (format "Error: %s - %s" err msg)
+          start end ai-org-chat-max-recursion-depth ai-org-chat-provider))))))
 
 ;;; Minor mode
 
