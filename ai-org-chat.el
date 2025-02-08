@@ -580,8 +580,11 @@ PROVIDER is the LLM service provider."
 (defun ai-org-chat--insert-tool-result (tool args result)
   ""
   (insert ":TOOL_CALL:\n"
-          (json-encode `((name . ,(llm-tool-name tool))
-                         (arguments . ,(cdr args))))
+          (json-encode
+           `((name . ,(llm-tool-name tool))
+             (arguments . ,(if (llm-tool-async tool)
+                               (cdr args)
+                             args))))
           "\n:END:\n")
   (insert ":TOOL_RESULT:\n"
           (format "%s" result)
@@ -1498,7 +1501,7 @@ With prefix ARG, show the transient interface instead."
                   :context system-context
                   :tools wrapped-tools)))
 
-    (if ai-org-chat-streaming-p
+    (if (and ai-org-chat-streaming-p (null tools))  ; Don't stream if using tools
         (llm-chat-streaming
          ai-org-chat-provider prompt
          (lambda (response)
