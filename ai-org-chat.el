@@ -593,6 +593,17 @@ object with logging behavior added."
 (defvar ai-org-chat-max-recursion-depth 10
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
+(defconst ai-org-chat--active-region-prefix
+  "Active region contents:\n\n"
+  "Prefix text used when including active region contents in messages.")
+
+(defvar-local ai-org-chat--source-buffer nil
+  "Indirect buffer holding the user's region for this AI chat.
+If non-nil, it is killed when this conversation buffer is killed.  This
+variable is populated when the user calls `ai-org-chat-new' with an
+active region.  We kill it automatically when the conversation buffer is
+killed.")
+
 (defun ai-org-chat--prepare-source-content ()
   "Prepare the source buffer content for inclusion in messages.
 Returns the wrapped content string if there's a live source buffer,
@@ -848,17 +859,6 @@ Send user to an AI chat buffer.  Copy current region contents into that buffer."
     (save-excursion
       (newline)
       (insert region-contents))))
-
-(defconst ai-org-chat--active-region-prefix
-  "Active region contents:\n\n"
-  "Prefix text used when including active region contents in messages.")
-
-(defvar-local ai-org-chat--source-buffer nil
-  "Indirect buffer holding the user's region for this AI chat.
-If non-nil, it is killed when this conversation buffer is killed.  This
-variable is populated when the user calls `ai-org-chat-new' with an
-active region.  We kill it automatically when the conversation buffer is
-killed.")
 
 (defun ai-org-chat--make-source-buffer (beg end)
   "Create an indirect buffer for region BEG..END of current buffer."
