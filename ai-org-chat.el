@@ -72,6 +72,14 @@ Use double spaces between sentences (an Emacs convention)."
   "System message to use, if any."
   :type '(choice string (const nil)))
 
+(defcustom ai-org-chat-tools nil
+  "List of available tools.
+
+Each tool should be a `llm-tool' struct.  The `:name' field of each
+tool is used to reference it in the :TOOLS: property of org headings."
+  :group 'ai-org-chat
+  :type '(repeat llm-tool))
+
 (defcustom ai-org-chat-dir "~/gpt"
   "Directory for storing files created by `ai-org-chat-new'."
   :type 'string)
@@ -306,9 +314,31 @@ either a string or llm-multipart object."
   "Get list of context items from CONTEXT properties up the tree."
   (ai-org-chat--collected-inherited-properties "CONTEXT"))
 
+(defun ai-org-chat--lookup-tool (name)
+  "Look up tool by NAME in `ai-org-chat-tools'.
+NAME is a string that should match the :name field of a tool."
+  (seq-find (lambda (tool)
+              (string= name (llm-tool-name tool)))
+            ai-org-chat-tools))
+
 (defun ai-org-chat--collect-tools ()
-  "Get list of tools specified by TOOLS proprerties up the tree."
-  (ai-org-chat--collected-inherited-properties "TOOLS"))
+  "Get list of tools specified by TOOLS properties up the tree.
+Each tool name in the TOOLS property is looked up in `ai-org-chat-tools'."
+  (let ((tool-names (ai-org-chat--collected-inherited-properties "TOOLS")))
+    (delq nil (mapcar #'ai-org-chat--lookup-tool tool-names))))
+
+(defun ai-org-chat-register-tool (tool)
+  "Register TOOL, making it available for use in AI chat.
+If a tool with the same name already exists, it is replaced.
+TOOL must be a `llm-tool' struct."
+  (unless (llm-tool-p tool)
+    (error "TOOL must be a llm-tool struct"))
+  (setq ai-org-chat-tools
+        (cons tool (seq-remove
+                    (lambda (existing)
+                      (string= (llm-tool-name existing)
+                               (llm-tool-name tool)))
+                    ai-org-chat-tools))))
 
 ;;; Assembling context strings
 
@@ -547,6 +577,16 @@ PROVIDER is the LLM service provider."
         (goto-char end)
         (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
+(defun ai-org-chat--insert-tool-result (tool args result)
+  ""
+  (insert ":TOOL_CALL:\n"
+          (json-encode `((name . ,(llm-tool-name tool))
+                         (arguments . ,(cdr args))))
+          "\n:END:\n")
+  (insert ":TOOL_RESULT:\n"
+          (format "%s" result)
+          "\n:END:\n\n"))
+
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
 TOOL is an llm-tool object.  Returns a new llm-tool
@@ -557,24 +597,22 @@ object with logging behavior added."
     (set-marker-insertion-type tool-marker t)
     (let ((wrapped-func
            (lambda (&rest args)
-             (let ((result nil))
+             (let ((result nil)
+                   (async (llm-tool-async tool)))
                (let ((wrapped-callback
                       (lambda (r)
                         (setq result r)
                         (with-current-buffer (marker-buffer tool-marker)
                           (save-excursion
                             (goto-char tool-marker)
-                            (insert ":TOOL_CALL:\n"
-                                    (json-encode `((name . ,(llm-tool-name tool))
-                                                   (arguments . ,(cdr args))))
-                                    "\n:END:\n")
-                            (insert ":TOOL_RESULT:\n"
-                                    (format "%s" result)
-                                    "\n:END:\n\n")))
-                        (funcall (car args) r))))
-                 (apply orig-func wrapped-callback (cdr args))
+                            (ai-org-chat--insert-tool-result tool args result)))
+                        (when async
+                          (funcall (car args) r)))))
+                 (if async
+                     (apply orig-func wrapped-callback (cdr args))
+                   (funcall wrapped-callback (apply orig-func args)))
                  result)))))
-      (llm-make-tool-function
+      (llm-make-tool
        :function wrapped-func
        :name (llm-tool-name tool)
        :description (llm-tool-description tool)
@@ -623,7 +661,11 @@ nil otherwise."
 MESSAGES is the list of conversation messages.
 POINT is where to insert the response.
 SYSTEM-CONTEXT is the system message with context."
-  (let* ((source-content (and (> (length messages) 1)
+  (let* ((tools (ai-org-chat--collect-tools))
+         (wrapped-tools (mapcar (lambda (tool)
+                                  (ai-org-chat--create-logging-tool tool point))
+                                tools))
+         (source-content (and (> (length messages) 1)
                               (ai-org-chat--prepare-source-content)))
          (final-messages
           (if source-content
@@ -641,19 +683,11 @@ SYSTEM-CONTEXT is the system message with context."
             messages))
          (prompt (llm-make-chat-prompt
                   (mapcar #'cdr final-messages)
-                  :context system-context)))
-    (if ai-org-chat-streaming-p
-        (llm-chat-streaming-to-point
-         ai-org-chat-provider prompt (current-buffer) point
-         (lambda () nil)
-         :processor #'ai-org-chat--process-response-text)
-      (llm-chat-async ai-org-chat-provider prompt
-                      (lambda (response)
-                        (save-excursion
-                          (goto-char point)
-                          (insert response)))
-                      (lambda (err msg)
-                        (message "Error: %s - %s" err msg))))))
+                  :context system-context
+                  :tools wrapped-tools)))
+    (ai-org-chat--call-with-functions
+     ai-org-chat-provider prompt (current-buffer) point
+     ai-org-chat-max-recursion-depth)))
 
 ;;; Convenience functions for populating CONTEXT and TOOLS
 
@@ -800,22 +834,14 @@ to filter the files (e.g., \"*.py\" for Python files)."
 
 (defun ai-org-chat-add-tools ()
   "Add selected tools to the current org node's TOOLS property.
-Prompts for tool functions (which must be `llm-tool-function' objects) to add.
-Only allows selection of symbols that are bound to `llm-tool-function' objects."
+Prompts for tool names from `ai-org-chat-tools'."
   (interactive)
-  (let* ((tool-symbols
-          (let (symbols)
-            (mapatoms
-             (lambda (sym)
-               (when (and (boundp sym)
-                          (symbol-value sym)
-                          (llm-tool-function-p (symbol-value sym)))
-                 (push (symbol-name sym) symbols))))
-            symbols))
+  (let* ((tool-names
+          (mapcar #'llm-tool-name ai-org-chat-tools))
          (selected-tools
           (completing-read-multiple
            "Select tools to add: "
-           tool-symbols)))
+           tool-names)))
     (when selected-tools
       (let* ((current-tools
               (org-entry-get-multivalued-property (point) "TOOLS"))
