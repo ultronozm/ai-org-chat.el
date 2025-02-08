@@ -1501,36 +1501,26 @@ With prefix ARG, show the transient interface instead."
                   :context system-context
                   :tools wrapped-tools)))
 
-    (if (and ai-org-chat-streaming-p (null tools))  ; Don't stream if using tools
-        (llm-chat-streaming
-         ai-org-chat-provider prompt
-         (lambda (response)
-           (ai-org-chat--insert-text start end response))
-         (lambda (response)
-           (ai-org-chat--handle-final-response
-            prompt response start end
-            ai-org-chat-max-recursion-depth ai-org-chat-provider))
-         (lambda (err msg)
-           (with-current-buffer (marker-buffer start)
-             (goto-char start)
-             (insert (format "\nError: %s - %s\n" err msg)))
-           (ai-org-chat--handle-final-response
-            prompt (format "Error: %s - %s" err msg)
-            start end ai-org-chat-max-recursion-depth ai-org-chat-provider)))
+    (let ((partial-cb
+           (lambda (response)
+             (ai-org-chat--insert-text start end response)))
+          (final-cb
+           (lambda (response)
+             (ai-org-chat--handle-final-response
+              prompt response start end
+              ai-org-chat-max-recursion-depth ai-org-chat-provider)))
+          (error-cb
+           (lambda (err msg)
+             (with-current-buffer (marker-buffer start)
+               (goto-char start)
+               (insert (format "\nError: %s - %s\n" err msg)))
+             (ai-org-chat--handle-final-response
+              prompt (format "Error: %s - %s" err msg)
+              start end ai-org-chat-max-recursion-depth ai-org-chat-provider))))
 
-      (llm-chat-async
-       ai-org-chat-provider prompt
-       (lambda (response)
-         (ai-org-chat--handle-final-response
-          prompt response start end
-          ai-org-chat-max-recursion-depth ai-org-chat-provider))
-       (lambda (err msg)
-         (with-current-buffer (marker-buffer start)
-           (goto-char start)
-           (insert (format "\nError: %s - %s\n" err msg)))
-         (ai-org-chat--handle-final-response
-          prompt (format "Error: %s - %s" err msg)
-          start end ai-org-chat-max-recursion-depth ai-org-chat-provider))))))
+      (if (and ai-org-chat-streaming-p (null tools)) ; Don't stream if using tools
+          (llm-chat-streaming ai-org-chat-provider prompt partial-cb final-cb error-cb)
+        (llm-chat-async ai-org-chat-provider prompt final-cb error-cb)))))
 
 ;;; Minor mode
 
