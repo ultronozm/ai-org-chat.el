@@ -911,13 +911,7 @@ With prefix argument ARG, immediately call
                       (lambda ()
                         (when (buffer-live-p ai-org-chat--source-buffer)
                           (kill-buffer ai-org-chat--source-buffer)))
-                      nil t)
-            (delete-other-windows)
-            (let ((left-window (selected-window))
-                  (right-window (split-window-horizontally)))
-              (set-window-buffer left-window source-buf)
-              (set-window-buffer right-window (current-buffer))
-              (select-window right-window))))
+                      nil t)))
       (ai-org-chat-new-empty))
     (when arg
       (save-excursion
