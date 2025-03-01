@@ -1249,7 +1249,12 @@ them directly."
 ;;; Model selection convenience functions
 
 (defcustom ai-org-chat-models
-  '(("sonnet 3.5" .
+  '(("sonnet 3.7" .
+     (:package llm-claude
+               :provider make-llm-claude
+               :key-env "ANTHROPIC_KEY"
+               :chat-model "claude-3-7-sonnet-20250219"))
+    ("sonnet 3.5" .
      (:package llm-claude
                :provider make-llm-claude
                :key-env "ANTHROPIC_KEY"
@@ -1345,7 +1350,7 @@ identifying the model, and PLIST is a property list with the following keys:
   :type '(alist :key-type string
                 :value-type (plist :key-type symbol :value-type sexp)))
 
-(defcustom ai-org-chat-default-model "sonnet 3.5"
+(defcustom ai-org-chat-default-model "sonnet 3.7"
   "The default LLM model to use for ai-org-chat.
 This should be one of the keys in `ai-org-chat-models'."
   :type 'string)

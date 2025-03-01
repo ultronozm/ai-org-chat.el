@@ -37,7 +37,7 @@ Download this repository, install using =M-x package-install-file= (or package-v
   (ai-org-chat-dir "~/gpt")
   :config
   ;; See below
-  ;; (ai-org-chat-select-model "sonnet 3.5")
+  ;; (ai-org-chat-select-model "sonnet 3.7")
   )
 #+end_src
 
