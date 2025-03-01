@@ -126,12 +126,6 @@ This is used when preparing conversation history to send to the LLM."
            text)))
     (replace-regexp-in-string "\n,\\(*\\)" "\n\\1" cleaned-text)))
 
-(defun ai-org-chat--get-entry-text ()
-  "Get text of current entry, excluding properties drawer."
-  (let ((region (ai-org-chat--get-entry-region)))
-    (ai-org-chat--clean-text
-     (buffer-substring-no-properties (car region) (cdr region)))))
-
 (defcustom ai-org-chat-enable-images t
   "Whether to enable image processing in AI chat conversations.
 When non-nil, standalone images in the conversation will be included
@@ -269,11 +263,6 @@ and end is the position before the next heading."
       (if prop-end
           (cons prop-end content-end)
         (cons content-start content-end)))))
-
-(defun ai-org-chat--get-entry-heading-and-text ()
-  "Get cons cell of current entry's clean heading and text."
-  (cons (org-get-heading t t)
-        (ai-org-chat--get-entry-text)))
 
 (defun ai-org-chat--get-conversation-history ()
   "Get list of conversation messages up to current entry.
