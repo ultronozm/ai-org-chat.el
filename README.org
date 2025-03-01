@@ -8,7 +8,7 @@ This package supports a threaded AI chat inside any org-mode buffer.  Here's wha
 #+attr_latex: :width 800px
 [[./img/fruits.png]]
 
-The design is inspired by the ChatGPT web interface.  There are [[https://www.reddit.com/r/emacs/comments/14glmqc/use_emacs_as_a_chatgpt_app/][many AI chat packages]] for Emacs, but I am not aware of any that naturally support multiple conversational pathways.  (Update: [[https://github.com/karthink/gptel][gptel]] now has a similar feature, which I haven't yet tried; it depends upon an pre-release version of Org.)  I'm also using this package as an experiment in ways to tighten the editing loop with AI in Emacs, via context, diffs, etc.
+The design was inspired by the ChatGPT web interface.  I've been using this package as an experiment in ways to tighten the editing loop with AI in Emacs, via context, diffs, etc.
 
 The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
 
@@ -41,12 +41,12 @@ Download this repository, install using =M-x package-install-file= (or package-v
   )
 #+end_src
 
-To use the package, you'll need to set up either the [[https://github.com/karthink/gptel][gptel]] or [[https://github.com/ahyatt/llm][llm]] library.  By default, =ai-org-chat= works with =gptel=, so if you have that configured already, you're all set.  However, features related to "tools" or "function calls" are currently only supported by the =llm= library, making it the recommended option for full functionality.
+To use the package, you'll need to set up the [[https://github.com/ahyatt/llm][llm]] library.  (A compatibility version using the [[https://github.com/karthink/gptel][gptel]] library is available on the 'gptel' branch if needed.)
 
-If you choose to use =llm=, you'll need to configure the =ai-org-chat-provider= variable with a valid provider as defined by the =llm= library.  Here's how to do that:
+You'll need to configure the =ai-org-chat-provider= variable with a valid provider as defined by the =llm= library.  Here's how to do that:
 
 1. Customize the =ai-org-chat-models= user option to include the models you want to use and the environment variables containing your API keys.
-2. Use the =ai-org-chat-select-model= command to choose your preferred model. You can do this by uncommenting and adjusting the line at the bottom of the above =use-package= declaration.
+2. Use the =ai-org-chat-select-model= command to choose your preferred model.  You can do this by uncommenting and adjusting the line at the bottom of the above =use-package= declaration.
 
 As a final tip, the following makes environment variables available in Emacs on MacOS:
 #+begin_src elisp
@@ -75,11 +75,11 @@ We provide the following commands:
 
 * Context and Tools
 
-ai-org-chat uses PROPERTIES drawers to manage context and tools for the AI conversation. These can be set at the top level of the file or in individual nodes.
+ai-org-chat uses PROPERTIES drawers to manage context and tools for the AI conversation.  These can be set at the top level of the file or in individual nodes.
 
 ** Context
 
-Context is managed through the =CONTEXT= property. This property can contain a list of items that provide additional information to the AI. These items can be:
+Context is managed through the =CONTEXT= property.  This property can contain a list of items that provide additional information to the AI.  These items can be:
 
 1. Buffer names
 2. File names as absolute paths, paths relative to the current directory, or paths relative to any subdirectory of the current Emacs project, searched in this order
@@ -94,16 +94,26 @@ Example:
 
 ** Tools
 
-Tools (or "function calls") are specified using the =TOOLS= property.  This property should contain a list of =llm-tool-function= objects that the AI can use.  This feature works only if:
+Tools (or "function calls") are specified using the =TOOLS= property.  This property should contain a list of tool names that reference tools registered in the =ai-org-chat-tools= variable.  For tools to work:
 
-1. The variable =ai-org-chat-provider= is set to a provider from the =llm= package
-2. That provider supports tools/function calls
-3. The tools have been properly defined as =llm-tool-function= objects
+1. The AI provider must support tools/function calls
+2. The tools must be properly registered in the =ai-org-chat-tools= list
 
-Example:
+You can register tools using the =ai-org-chat-register-tool= function, which takes an =llm-tool= struct:
+
+#+begin_src elisp
+(ai-org-chat-register-tool 
+ (llm-make-tool :name "my-tool"
+                :function #'my-tool-function
+                :description "Description of what the tool does"
+                :args '(...)))
+#+end_src
+
+Alternatively, you can set the =ai-org-chat-tools= variable directly.  Once registered, tools can be referenced by name in the TOOLS property:
+
 #+begin_example
 :PROPERTIES:
-:TOOLS: my-tool-function another-tool-function
+:TOOLS: my-tool another-tool
 :END:
 #+end_example
 
@@ -115,7 +125,7 @@ While you can directly edit PROPERTIES drawers using Org mode's built-in command
 - =ai-org-chat-add-visible-buffers-context=: Add all visible buffers as context.
 - =ai-org-chat-add-file-context=: Add selected files as context.
 - =ai-org-chat-add-project-files-context=: Add all files from a selected project as context.
-- =ai-org-chat-add-tools=: Add selected =llm-tool-function= objects to the current node.
+- =ai-org-chat-add-tools=: Add selected tools from =ai-org-chat-tools= to the current node.
 
 These commands are designed to simplify context/tool management, but are not required for using the package.
 
@@ -153,7 +163,7 @@ A common workflow is to create a file =ai.org= in a project's src directory, run
 
 ** AI Planner
 
-Here's an example of using functions as context to create an AI chat interface to your agenda. This setup gives the AI access to the current time, your diary, weekly agenda, and yearly project timeline. The setup assumes you use the diary, org-mode and the agenda for task management, with long-term travel-related items stored in a file called projects.org. It should be easy to adapt this setup to other ways of managing your schedule.
+Here's an example of using functions as context to create an AI chat interface to your agenda.  This setup gives the AI access to the current time, your diary, weekly agenda, and yearly project timeline.  The setup assumes you use the diary, org-mode and the agenda for task management, with long-term travel-related items stored in a file called projects.org.  It should be easy to adapt this setup to other ways of managing your schedule.
 
 1. Create an org file, say =planner.org=
 2. Run =M-x ai-org-chat-setup-buffer=
@@ -177,7 +187,7 @@ The context consists of:
 3. A function that provides your agenda for the next seven days
 4. A function that provides your project timeline for the next year
 
-With this setup, you can chat with an AI that has continuous access to your schedule and plans. For example, you can ask "Which afternoons do I have free this week?" or "When's the best time to schedule a trip in March?"
+With this setup, you can chat with an AI that has continuous access to your schedule and plans.  For example, you can ask "Which afternoons do I have free this week?" or "When's the best time to schedule a trip in March?"
 
 The three agenda-related functions can be implemented as follows:
 

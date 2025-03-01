@@ -43,7 +43,7 @@
 
 (defvar ai-org-chat-provider nil
   "The LLM provider to use for AI chat.
-This should be either an instance of an LLM provider created using the
+This should be an instance of an LLM provider created using the
 `llm' package.")
 
 (defcustom ai-org-chat-user-name "User"
@@ -64,7 +64,7 @@ When quoting source blocks, DON'T USE MARKDOWN SYNTAX, but instead use Emacs org
 
 Similarly, DON'T use markdown syntax like `keyword`, but instead org-mode syntax like =keyword=.
 
-You can directly affect the user's computing environment by requesting that the user execute elisp or sh source blocks.
+You can directly affect the user's computing environment by requesting that the user execute elisp or sh source blocks.  When using elisp, better to code blocks that can be evaluated directly than functions that must be executed manually; I DON'T want a bunch of junk named functions (defun fix-foo-blah ...) polluting my namespace.  Just let-bind temporary lambda's, instead.  DON'T provide code blocks when it's inappropriate, e.g., if you're replacing huge amounts of text (rather than just making small modifications); in such cases, just give that text in a source block.
 
 Look at the system message LAST -- it contains the most up-to-date contents, more recent than the previous chat messages.
 
@@ -227,23 +227,21 @@ is non-nil."
   "Prepare message content from region BEG to END.
 Returns either a string for text-only content or an llm-multipart object
 for content with media (images and/or PDFs)."
-  (if (eq ai-org-chat-provider 'gptel)
-      (buffer-substring-no-properties beg end)
-    (let ((parts (ai-org-chat--split-entry-content beg end)))
-      (if (and (= (length parts) 1)
-               (eq (car (car parts)) :text))
-          ;; Text-only content
-          (plist-get (car parts) :text)
-        ;; Mixed content - convert to multipart
-        (apply #'llm-make-multipart
-               (mapcar (lambda (part)
-                         (pcase (car part)
-                           (:text (plist-get part :text))
-                           (:image (plist-get part :image))
-                           (:pdf (make-llm-media
-                                  :mime-type "application/pdf"
-                                  :data (plist-get part :pdf)))))
-                       parts))))))
+  (let ((parts (ai-org-chat--split-entry-content beg end)))
+    (if (and (= (length parts) 1)
+             (eq (car (car parts)) :text))
+        ;; Text-only content
+        (plist-get (car parts) :text)
+      ;; Mixed content - convert to multipart
+      (apply #'llm-make-multipart
+             (mapcar (lambda (part)
+                       (pcase (car part)
+                         (:text (plist-get part :text))
+                         (:image (plist-get part :image))
+                         (:pdf (make-llm-media
+                                :mime-type "application/pdf"
+                                :data (plist-get part :pdf)))))
+                     parts)))))
 
 (defun ai-org-chat--get-entry-region ()
   "Get region of current entry's content, excluding properties drawer.
@@ -278,20 +276,14 @@ either a string or llm-multipart object."
     (save-excursion
       (let ((region (ai-org-chat--get-entry-region)))
         (push (cons (org-get-heading t t)
-                    (if (eq ai-org-chat-provider 'gptel)
-                        (buffer-substring-no-properties
-                         (car region) (cdr region))
-                      (ai-org-chat--prepare-message-content
-                       (car region) (cdr region))))
+                    (ai-org-chat--prepare-message-content
+                     (car region) (cdr region)))
               messages))
       (while (org-up-heading-safe)
         (let ((region (ai-org-chat--get-entry-region)))
           (push (cons (org-get-heading t t)
-                      (if (eq ai-org-chat-provider 'gptel)
-                          (buffer-substring-no-properties
-                           (car region) (cdr region))
-                        (ai-org-chat--prepare-message-content
-                         (car region) (cdr region))))
+                      (ai-org-chat--prepare-message-content
+                       (car region) (cdr region)))
                 messages))))
     messages))
 
