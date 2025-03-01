@@ -1481,7 +1481,7 @@ With prefix ARG, show the transient interface instead."
   (interactive "P")
   (when arg
     (ai-org-chat-menu)
-    (cl-return-from ai-org-chat-respond))
+    (cl-return))
 
   (unless ai-org-chat-provider
     (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
