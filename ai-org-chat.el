@@ -1485,53 +1485,50 @@ MODEL is a string key from `ai-org-chat-models'."
   "Insert response from AI after current heading in org buffer.
 With prefix ARG, show the transient interface instead."
   (interactive "P")
-  (when arg
-    (ai-org-chat-menu)
-    (cl-return))
-
-  (unless ai-org-chat-provider
-    (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
-
-  (let* ((system ai-org-chat-system-message)
-         (context (ai-org-chat--assemble-full-context))
-         (system-context (concat system "\n" context))
-         (messages (ai-org-chat--get-conversation-history))
-         (start (save-excursion
-                  (ai-org-chat--create-heading ai-org-chat-ai-name)
-                  (insert "\n")
-                  (save-excursion
-                    (ai-org-chat--create-heading ai-org-chat-user-name))
-                  (point-marker)))
-         (end (copy-marker start t))
-         (tools (ai-org-chat--collect-tools))
-         (wrapped-tools (mapcar (lambda (tool)
-                                  (ai-org-chat--create-logging-tool tool start))
-                                tools))
-         (prompt (llm-make-chat-prompt
-                  (mapcar #'cdr messages)
-                  :context system-context
-                  :tools wrapped-tools)))
-
-    (let ((partial-cb
-           (lambda (response)
-             (ai-org-chat--insert-text start end response)))
-          (final-cb
-           (lambda (response)
-             (ai-org-chat--handle-final-response
-              prompt response start end
-              ai-org-chat-max-recursion-depth ai-org-chat-provider)))
-          (error-cb
-           (lambda (err msg)
-             (with-current-buffer (marker-buffer start)
-               (goto-char start)
-               (insert (format "\nError: %s - %s\n" err msg)))
-             (ai-org-chat--handle-final-response
-              prompt (format "Error: %s - %s" err msg)
-              start end ai-org-chat-max-recursion-depth ai-org-chat-provider))))
-
-      (if ai-org-chat-streaming-p
-          (llm-chat-streaming ai-org-chat-provider prompt partial-cb final-cb error-cb)
-        (llm-chat-async ai-org-chat-provider prompt final-cb error-cb)))))
+  (cond
+   (arg
+    (ai-org-chat-menu))
+   (t
+    (unless ai-org-chat-provider
+      (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
+    (let* ((system ai-org-chat-system-message)
+           (context (ai-org-chat--assemble-full-context))
+           (system-context (concat system "\n" context))
+           (messages (ai-org-chat--get-conversation-history))
+           (start (save-excursion
+                    (ai-org-chat--create-heading ai-org-chat-ai-name)
+                    (insert "\n")
+                    (save-excursion
+                      (ai-org-chat--create-heading ai-org-chat-user-name))
+                    (point-marker)))
+           (end (copy-marker start t))
+           (tools (ai-org-chat--collect-tools))
+           (wrapped-tools (mapcar (lambda (tool)
+                                    (ai-org-chat--create-logging-tool tool start))
+                                  tools))
+           (prompt (llm-make-chat-prompt
+                    (mapcar #'cdr messages)
+                    :context system-context
+                    :tools wrapped-tools)))
+      (let ((partial-cb
+             (lambda (response)
+               (ai-org-chat--insert-text start end response)))
+            (final-cb
+             (lambda (response)
+               (ai-org-chat--handle-final-response
+                prompt response start end
+                ai-org-chat-max-recursion-depth ai-org-chat-provider)))
+            (error-cb
+             (lambda (err msg)
+               (with-current-buffer (marker-buffer start)
+                 (goto-char start)
+                 (insert (format "\nError: %s - %s\n" err msg)))
+               (ai-org-chat--handle-final-response
+                prompt (format "Error: %s - %s" err msg)
+                start end ai-org-chat-max-recursion-depth ai-org-chat-provider))))
+        (if ai-org-chat-streaming-p
+            (llm-chat-streaming ai-org-chat-provider prompt partial-cb final-cb error-cb)
+          (llm-chat-async ai-org-chat-provider prompt final-cb error-cb)))))))
 
 ;;; Minor mode
 
