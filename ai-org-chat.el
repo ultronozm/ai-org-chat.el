@@ -80,6 +80,13 @@ tool is used to reference it in the :TOOLS: property of org headings."
   :group 'ai-org-chat
   :type '(repeat llm-tool))
 
+(defcustom ai-org-chat-fold-tool-drawers t
+  "Whether to automatically fold tool-related property drawers.
+When non-nil, the :TOOL_CALL: and :TOOL_RESULT: property drawers
+are folded automatically when inserted."
+  :group 'ai-org-chat
+  :type 'boolean)
+
 (defcustom ai-org-chat-dir "~/gpt"
   "Directory for storing files created by `ai-org-chat-new'."
   :type 'string)
@@ -576,18 +583,27 @@ PROVIDER is the LLM service provider."
 TOOL is the tool object, ARGS are the arguments passed to the tool,
 and RESULT is the result returned by the tool.
 
-Ensures that property drawers start on their own line."
+Inserts the tool call and result as property drawers.
+When `ai-org-chat-fold-tool-drawers' is non-nil, drawers are folded."
   (unless (bolp) (insert "\n"))
-  (insert ":TOOL_CALL:\n"
-          (json-encode
-           `((name . ,(llm-tool-name tool))
-             (arguments . ,(if (llm-tool-async tool)
-                               (cdr args)
-                             args))))
-          "\n:END:\n")
-  (insert ":TOOL_RESULT:\n"
-          (format "%s" result)
-          "\n:END:\n\n"))
+  (let ((tool-call-start (point)))
+    (insert ":TOOL_CALL:\n"
+            (json-encode
+             `((name . ,(llm-tool-name tool))
+               (arguments . ,(if (llm-tool-async tool)
+                                 (cdr args)
+                               args))))
+            "\n:END:\n")
+    (let ((tool-result-start (point)))
+      (insert ":TOOL_RESULT:\n"
+              (format "%s" result)
+              "\n:END:\n\n")
+      (when ai-org-chat-fold-tool-drawers
+        (save-excursion
+          (goto-char tool-call-start)
+          (org-flag-drawer t)
+          (goto-char tool-result-start)
+          (org-flag-drawer t))))))
 
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
