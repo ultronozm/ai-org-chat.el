@@ -529,10 +529,8 @@ REMAINING-DEPTH determines how many more recursive calls are allowed."
   (let* ((start (with-current-buffer buffer (copy-marker point nil)))
          (end (with-current-buffer buffer (copy-marker point t)))
          (captured-buffer buffer)
-         (tools (and (llm-chat-prompt-p prompt)
-                     (llm-chat-prompt-tools prompt)))
-         ;; Disable streaming if tools are present
-         (streaming-p (and ai-org-chat-streaming-p (null tools)))
+         ;; Always enable streaming if the user wants it
+         (streaming-p ai-org-chat-streaming-p)
          (partial-cb (when streaming-p
                        (lambda (response)
                          (ai-org-chat--insert-text start end response))))
@@ -560,7 +558,11 @@ PROVIDER is the LLM service provider."
   (cond
    ((stringp response)
     (ai-org-chat--insert-text start end response))
+
+   ;; Tool call response - continue conversation after handling tool calls
    ((and (listp response) (> remaining-depth 0))
+    ;; For tool calls, we need to recursively restart the conversation
+    ;; with the updated prompt that contains tool results
     (ai-org-chat--call-with-functions
      provider prompt (marker-buffer end) (marker-position end) (1- remaining-depth)))
    (t
@@ -570,7 +572,12 @@ PROVIDER is the LLM service provider."
         (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
 (defun ai-org-chat--insert-tool-result (tool args result)
-  ""
+  "Insert tool call and result information at point.
+TOOL is the tool object, ARGS are the arguments passed to the tool,
+and RESULT is the result returned by the tool.
+
+Ensures that property drawers start on their own line."
+  (unless (bolp) (insert "\n"))
   (insert ":TOOL_CALL:\n"
           (json-encode
            `((name . ,(llm-tool-name tool))
@@ -584,22 +591,29 @@ PROVIDER is the LLM service provider."
 
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
-TOOL is an llm-tool object.  Returns a new llm-tool
-object with logging behavior added."
+TOOL is an llm-tool object. Returns a new llm-tool
+object with logging behavior added.
+
+This wraps the original tool function to:
+1. Execute the tool with the provided arguments
+2. Insert tool call and result at the marker position
+3. Return the result so the conversation can continue"
   (let* ((orig-func (llm-tool-function tool))
-         (tool-marker (make-marker)))
-    (set-marker tool-marker (marker-position marker))
-    (set-marker-insertion-type tool-marker t)
+         (tool-result-insertion-marker (make-marker)))
+    (set-marker tool-result-insertion-marker (marker-position marker))
+    (set-marker-insertion-type tool-result-insertion-marker t)
+
     (let ((wrapped-func
            (lambda (&rest args)
              (let ((result nil)
                    (async (llm-tool-async tool)))
+               ;; Define a callback that inserts tool results and handles async forwarding
                (let ((wrapped-callback
                       (lambda (r)
                         (setq result r)
-                        (with-current-buffer (marker-buffer tool-marker)
+                        (with-current-buffer (marker-buffer tool-result-insertion-marker)
                           (save-excursion
-                            (goto-char tool-marker)
+                            (goto-char tool-result-insertion-marker)
                             (ai-org-chat--insert-tool-result tool args result)))
                         (when async
                           (funcall (car args) r)))))
@@ -1515,7 +1529,7 @@ With prefix ARG, show the transient interface instead."
               prompt (format "Error: %s - %s" err msg)
               start end ai-org-chat-max-recursion-depth ai-org-chat-provider))))
 
-      (if (and ai-org-chat-streaming-p (null tools)) ; Don't stream if using tools
+      (if ai-org-chat-streaming-p
           (llm-chat-streaming ai-org-chat-provider prompt partial-cb final-cb error-cb)
         (llm-chat-async ai-org-chat-provider prompt final-cb error-cb)))))
 
