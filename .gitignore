@@ -17,3 +17,6 @@ ai.org
 *.diff
 
 *.txt
+.DS_Store
+*.rej
+claude.md
