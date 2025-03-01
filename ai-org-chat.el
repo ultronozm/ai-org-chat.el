@@ -1485,6 +1485,15 @@ MODEL is a string key from `ai-org-chat-models'."
   [["Actions"
     ("RET" "Get response" ai-org-chat-respond)]])
 
+(defun ai-org-chat--ensure-utf8-encoding (text)
+  "Ensure TEXT is properly encoded as UTF-8.
+Returns the properly decoded string."
+  (let* ((unibyte (if (multibyte-string-p text)
+                      (encode-coding-string text 'utf-8-auto)
+                    text))
+         (decoded (decode-coding-string unibyte 'utf-8-auto)))
+    decoded))
+
 ;;;###autoload
 (defun ai-org-chat-respond (&optional arg)
   "Insert response from AI after current heading in org buffer.
@@ -1512,8 +1521,9 @@ With prefix ARG, show the transient interface instead."
                                     (ai-org-chat--create-logging-tool tool start))
                                   tools))
            (prompt (llm-make-chat-prompt
-                    (mapcar #'cdr messages)
-                    :context system-context
+                    (mapcar #'ai-org-chat--ensure-utf8-encoding
+                            (mapcar #'cdr messages))
+                    :context (ai-org-chat--ensure-utf8-encoding system-context)
                     :tools wrapped-tools)))
       (let ((partial-cb
              (lambda (response)
