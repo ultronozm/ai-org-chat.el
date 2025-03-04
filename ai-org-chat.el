@@ -224,20 +224,66 @@ is non-nil."
                 (push `(:text ,text) parts))))
           (nreverse parts))))))
 
+(defcustom ai-org-chat-excluded-drawers '("PROPERTIES" "TOOL_CALL" "TOOL_RESULT")
+  "List of drawer names that should be excluded from chat messages.
+Each entry should be a string without the colon delimiters."
+  :type '(repeat string)
+  :group 'ai-org-chat)
+
+(defun ai-org-chat--filter-drawers (text excluded-drawers)
+  "Filter out drawers listed in EXCLUDED-DRAWERS from TEXT.
+EXCLUDED-DRAWERS should be a list of drawer names without colons."
+  (with-temp-buffer
+    (insert text)
+    (goto-char (point-min))
+    (let ((case-fold-search t)
+          (drawer-re (concat "^[ \t]*:\\("
+                            (mapconcat #'regexp-quote excluded-drawers "\\|")
+                            "\\):[ \t]*$"))
+          (in-code-block nil))
+      (while (not (eobp))
+        ;; Track code block state
+        (cond
+         ;; Entering a code or example block
+         ((looking-at "^[ \t]*#\\+begin_\\(src\\|example\\)")
+          (setq in-code-block t))
+         ;; Exiting a code or example block
+         ((looking-at "^[ \t]*#\\+end_\\(src\\|example\\)")
+          (setq in-code-block nil))
+         ;; Entering a markdown-style code block
+         ((looking-at "^[ \t]*```")
+          (setq in-code-block (not in-code-block)))
+         ;; Check for drawers, but only outside code blocks
+         ((and (not in-code-block)
+               (looking-at drawer-re))
+          (let ((drawer-start (match-beginning 0)))
+            (when (re-search-forward "^[ \t]*:END:[ \t]*$" nil t)
+              (forward-line 1)
+              (delete-region drawer-start (point))
+              (goto-char drawer-start)))))
+        (forward-line 1)))
+    (buffer-string)))
+
+(defun ai-org-chat--filter-tool-drawers (text)
+  "Filter out tool-related drawers from TEXT.
+Removes drawers listed in `ai-org-chat-excluded-drawers'."
+  (ai-org-chat--filter-drawers text ai-org-chat-excluded-drawers))
+
 (defun ai-org-chat--prepare-message-content (beg end)
   "Prepare message content from region BEG to END.
 Returns either a string for text-only content or an llm-multipart object
-for content with media (images and/or PDFs)."
+for content with media (images and/or PDFs).
+Filters out tool-related drawers from text content."
   (let ((parts (ai-org-chat--split-entry-content beg end)))
     (if (and (= (length parts) 1)
              (eq (car (car parts)) :text))
-        ;; Text-only content
-        (plist-get (car parts) :text)
-      ;; Mixed content - convert to multipart
+        ;; Text-only content - filter tool drawers
+        (ai-org-chat--filter-tool-drawers (plist-get (car parts) :text))
+      ;; Mixed content - convert to multipart and filter text parts
       (apply #'llm-make-multipart
              (mapcar (lambda (part)
                        (pcase (car part)
-                         (:text (plist-get part :text))
+                         (:text (ai-org-chat--filter-tool-drawers (plist-get part :text)))
                          (:image (plist-get part :image))
                          (:pdf (make-llm-media
                                 :mime-type "application/pdf"
@@ -245,24 +291,17 @@ for content with media (images and/or PDFs)."
                      parts)))))
 
 (defun ai-org-chat--get-entry-region ()
-  "Get region of current entry's content, excluding properties drawer.
+  "Get region of current entry's content.
 Returns (cons beg end) where beg is the position after the heading
-and end is the position before the next heading."
+and end is the position before the next heading.
+Note: The actual drawer filtering is done in `ai-org-chat--filter-drawers'."
   (save-excursion
     (org-back-to-heading)
     (let ((content-start (line-beginning-position 2))
           (content-end (save-excursion
                          (outline-next-heading)
-                         (point)))
-          prop-end)
-      (goto-char content-start)
-      (when (looking-at-p "[ \t]*:PROPERTIES:[ \t]*$")
-        (search-forward ":END:" content-end t)
-        (forward-line 1)
-        (setq prop-end (point)))
-      (if prop-end
-          (cons prop-end content-end)
-        (cons content-start content-end)))))
+                         (point))))
+      (cons content-start content-end))))
 
 (defun ai-org-chat--get-conversation-history ()
   "Get list of conversation messages up to current entry.

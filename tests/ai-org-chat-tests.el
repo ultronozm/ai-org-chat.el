@@ -227,4 +227,154 @@
       (should (equal (ai-org-chat--collect-tools)
                      (list tool1 tool2))))))
 
+(ert-deftest test-ai-org-chat--filter-drawers ()
+  "Test filtering of specific drawers from text."
+  ;; Test basic drawer filtering
+  (let ((text "Some text before drawer
+:TEST_DRAWER:
+Drawer content that should be removed
+:END:
+Text after drawer")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Some text before drawer
+Text after drawer")))
+
+  ;; Test with multiple drawers
+  (let ((text "Start text
+:DRAWER1:
+Content in drawer 1
+:END:
+Middle text
+:DRAWER2:
+Content in drawer 2
+:END:
+End text")
+        (excluded '("DRAWER1" "DRAWER2")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Start text
+Middle text
+End text")))
+
+  ;; Test with selective exclusion
+  (let ((text "Start text
+:DRAWER1:
+Content in drawer 1
+:END:
+Middle text
+:DRAWER2:
+Content in drawer 2
+:END:
+End text")
+        (excluded '("DRAWER1")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Start text
+Middle text
+:DRAWER2:
+Content in drawer 2
+:END:
+End text")))
+
+  ;; Test with indented drawers
+  (let ((text "Start text
+  :INDENTED:
+  Indented drawer content
+  :END:
+End text")
+        (excluded '("INDENTED")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Start text
+End text")))
+
+  ;; Test with no drawers
+  (let ((text "Text with no drawers present")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Text with no drawers present")))
+
+  ;; Test with empty text
+  (let ((text "")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "")))
+
+  ;; Test with nested content resembling drawers (should not be affected)
+  (let ((text "Some code example:
+```
+:FAKE_DRAWER:
+This is not a real drawer
+:END:
+```
+Real text")
+        (excluded '("FAKE_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Some code example:
+```
+:FAKE_DRAWER:
+This is not a real drawer
+:END:
+```
+Real text")))
+
+  ;; Test with case-insensitivity
+  (let ((text "Some text
+:properties:
+Key: Value
+:end:
+More text")
+        (excluded '("PROPERTIES")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Some text
+More text"))))
+
+(ert-deftest test-ai-org-chat--filter-tool-drawers ()
+  "Test filtering of tool drawers using the configured excluded drawers list."
+  ;; Save original value to restore after test
+  (let ((original-excluded-drawers ai-org-chat-excluded-drawers))
+    (unwind-protect
+        (progn
+          ;; Set to known values for testing
+          (setq ai-org-chat-excluded-drawers '("TOOL_CALL" "TOOL_RESULT"))
+          
+          ;; Test standard tool drawer filtering
+          (let ((text "Text before
+:TOOL_CALL:
+{\"name\":\"test_tool\",\"arguments\":{\"arg1\":\"value1\"}}
+:END:
+Middle text
+:TOOL_RESULT:
+Some result data
+:END:
+Text after"))
+            (should (equal (ai-org-chat--filter-tool-drawers text)
+                         "Text before
+Middle text
+Text after")))
+          
+          ;; Test with only one type of drawer
+          (let ((text "Text with only result
+:TOOL_RESULT:
+Tool result data
+:END:
+End text"))
+            (should (equal (ai-org-chat--filter-tool-drawers text)
+                         "Text with only result
+End text")))
+          
+          ;; Test with other drawers that should not be filtered
+          (let ((text "Text with other drawer
+:OTHER_DRAWER:
+Other content
+:END:
+End text"))
+            (should (equal (ai-org-chat--filter-tool-drawers text)
+                         "Text with other drawer
+:OTHER_DRAWER:
+Other content
+:END:
+End text"))))
+      
+      ;; Restore original value
+      (setq ai-org-chat-excluded-drawers original-excluded-drawers))))
+
 (provide 'ai-org-chat-tests)
