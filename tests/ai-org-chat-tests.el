@@ -316,6 +316,91 @@ This is not a real drawer
 ```
 Real text")))
 
+  ;; Test with org-mode src blocks
+  (let ((text "Some code in org syntax:
+#+begin_src org
+:TEST_DRAWER:
+This is in a source block and should be preserved
+:END:
+#+end_src
+Regular drawer outside:
+:TEST_DRAWER:
+This should be removed
+:END:
+More text")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Some code in org syntax:
+#+begin_src org
+:TEST_DRAWER:
+This is in a source block and should be preserved
+:END:
+#+end_src
+Regular drawer outside:
+More text")))
+
+  ;; Test with org example blocks
+  (let ((text "Example block:
+#+begin_example
+:TEST_DRAWER:
+This is in an example block and should be preserved
+:END:
+#+end_example
+Text after")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Example block:
+#+begin_example
+:TEST_DRAWER:
+This is in an example block and should be preserved
+:END:
+#+end_example
+Text after")))
+
+  ;; Test with nested markdown code blocks
+  (let ((text "Nested code blocks:
+```
+Outer block
+```
+Inner block with drawer syntax
+:TEST_DRAWER:
+This should be removed as it's not in a code block
+:END:
+```
+```
+Text after")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Nested code blocks:
+```
+Outer block
+```
+Inner block with drawer syntax
+```
+```
+Text after")))
+
+  ;; Test with real drawer immediately followed by code block containing drawer syntax
+  (let ((text "Real drawer then code:
+:TEST_DRAWER:
+Real drawer content to remove
+:END:
+```
+:TEST_DRAWER:
+This is in code and should stay
+:END:
+```
+Text after")
+        (excluded '("TEST_DRAWER")))
+    (should (equal (ai-org-chat--filter-drawers text excluded)
+                   "Real drawer then code:
+```
+:TEST_DRAWER:
+This is in code and should stay
+:END:
+```
+Text after")))
+
   ;; Test with case-insensitivity
   (let ((text "Some text
 :properties:
@@ -372,7 +457,79 @@ End text"))
 :OTHER_DRAWER:
 Other content
 :END:
-End text"))))
+End text")))
+          
+          ;; Test with tool drawers in code blocks (should be preserved)
+          (let ((text "Example showing a tool call:
+```
+Here's how a tool call would look:
+:TOOL_CALL:
+{\"name\":\"test_tool\",\"arguments\":{\"arg1\":\"value1\"}}
+:END:
+```
+And here's a real tool call:
+:TOOL_CALL:
+{\"name\":\"real_tool\",\"arguments\":{\"arg1\":\"real\"}}
+:END:
+Text after"))
+            (should (equal (ai-org-chat--filter-tool-drawers text)
+                         "Example showing a tool call:
+```
+Here's how a tool call would look:
+:TOOL_CALL:
+{\"name\":\"test_tool\",\"arguments\":{\"arg1\":\"value1\"}}
+:END:
+```
+And here's a real tool call:
+Text after")))
+          
+          ;; Test with mixed org blocks and tool drawers
+          (let ((text "Documentation:
+#+begin_src org
+:TOOL_CALL:
+This shows example syntax
+:END:
+#+end_src
+Real tool call:
+:TOOL_CALL:
+{\"name\":\"actual_tool\",\"arguments\":{}}
+:END:
+:TOOL_RESULT:
+Success
+:END:
+End text"))
+            (should (equal (ai-org-chat--filter-tool-drawers text)
+                         "Documentation:
+#+begin_src org
+:TOOL_CALL:
+This shows example syntax
+:END:
+#+end_src
+Real tool call:
+End text")))
+            
+          ;; Test another variation with nested content
+          (let ((text "Documentation with triple backticks:
+```
+:TOOL_CALL:
+Example structure
+:END:
+```
+:TOOL_CALL:
+{\"real\":\"call\"}
+:END:
+:TOOL_RESULT:
+Result
+:END:
+End"))
+            (should (equal (ai-org-chat--filter-tool-drawers text)
+                         "Documentation with triple backticks:
+```
+:TOOL_CALL:
+Example structure
+:END:
+```
+End"))))
       
       ;; Restore original value
       (setq ai-org-chat-excluded-drawers original-excluded-drawers))))
