@@ -243,42 +243,44 @@ EXCLUDED-DRAWERS should be a list of drawer names without colons."
           (in-code-block nil)
           (code-block-type nil))
       (while (not (eobp))
-        (cond
-         ;; Check for org code blocks (src, example)
-         ((looking-at "^[ \t]*#\\+begin_\\(src\\|example\\)")
-          (setq in-code-block t
-                code-block-type 'org))
-         ((and in-code-block
-               (eq code-block-type 'org)
-               (looking-at "^[ \t]*#\\+end_\\(src\\|example\\)"))
-          (setq in-code-block nil
-                code-block-type nil))
-         
-         ;; Check for markdown code blocks (triple backticks)
-         ((looking-at "^[ \t]*```")
-          (if in-code-block
-              (when (eq code-block-type 'markdown)
-                (setq in-code-block nil
-                      code-block-type nil))
+        (let ((continue-loop t))
+          ;; Process the current line
+          (cond
+           ;; Check for org code blocks (src, example)
+           ((looking-at "^[ \t]*#\\+begin_\\(src\\|example\\)")
             (setq in-code-block t
-                  code-block-type 'markdown)))
-         
-         ;; Check for drawers, but only when not in code blocks
-         ((and (not in-code-block)
-               (looking-at drawer-re))
-          (let ((drawer-start (point)))
-            (when (re-search-forward "^[ \t]*:END:[ \t]*$" nil t)
-              (forward-line 1)
-              (delete-region drawer-start (point))
-              ;; Go back to the start so we don't skip lines
-              (goto-char drawer-start)
-              (setq continue-search t)
-              ;; Skip the following checks and continue loop
-              (forward-line 0)
-              (next-iteration)
-              ))))
-        
-        (forward-line 1)))
+                  code-block-type 'org))
+           
+           ((and in-code-block
+                 (eq code-block-type 'org)
+                 (looking-at "^[ \t]*#\\+end_\\(src\\|example\\)"))
+            (setq in-code-block nil
+                  code-block-type nil))
+           
+           ;; Check for markdown code blocks (triple backticks)
+           ((looking-at "^[ \t]*```")
+            (if in-code-block
+                (when (eq code-block-type 'markdown)
+                  (setq in-code-block nil
+                        code-block-type nil))
+              (setq in-code-block t
+                    code-block-type 'markdown)))
+           
+           ;; Check for drawers, but only when not in code blocks
+           ((and (not in-code-block)
+                 (looking-at drawer-re))
+            (let ((drawer-start (point)))
+              (when (re-search-forward "^[ \t]*:END:[ \t]*$" nil t)
+                (forward-line 1)
+                (delete-region drawer-start (point))
+                ;; Go back to the start so we don't skip lines
+                (goto-char drawer-start)
+                ;; Don't process any further conditions for this iteration
+                (setq continue-loop nil)))))
+          
+          ;; Only move to next line if we didn't do a special operation
+          (when continue-loop
+            (forward-line 1)))))
     (buffer-string)))
 
 (defun ai-org-chat--filter-tool-drawers (text)
@@ -566,8 +568,10 @@ Adds commas before asterisks that could be interpreted as org headings:
             (goto-char (+ start prefix-length)))
           (delete-region (point) end)
           (insert (substring processed-response prefix-length)))))
-     ((listp response)
-      (message "Response is a list: %s" response)))))
+     ;; Silently ignore nil responses from streaming API
+     ((and (listp response) response)
+      ;; Only log non-nil lists (tool call responses)
+      (message "Processing tool response: %s" response)))))
 
 (defcustom ai-org-chat-ai-name "AI"
   "AI name to insert into buffer."
