@@ -238,29 +238,46 @@ EXCLUDED-DRAWERS should be a list of drawer names without colons."
     (goto-char (point-min))
     (let ((case-fold-search t)
           (drawer-re (concat "^[ \t]*:\\("
-                            (mapconcat #'regexp-quote excluded-drawers "\\|")
-                            "\\):[ \t]*$"))
-          (in-code-block nil))
+                             (mapconcat #'regexp-quote excluded-drawers "\\|")
+                             "\\):[ \t]*$"))
+          (in-code-block nil)
+          (code-block-type nil))
       (while (not (eobp))
-        ;; Track code block state
         (cond
-         ;; Entering a code or example block
+         ;; Check for org code blocks (src, example)
          ((looking-at "^[ \t]*#\\+begin_\\(src\\|example\\)")
-          (setq in-code-block t))
-         ;; Exiting a code or example block
-         ((looking-at "^[ \t]*#\\+end_\\(src\\|example\\)")
-          (setq in-code-block nil))
-         ;; Entering a markdown-style code block
+          (setq in-code-block t
+                code-block-type 'org))
+         ((and in-code-block
+               (eq code-block-type 'org)
+               (looking-at "^[ \t]*#\\+end_\\(src\\|example\\)"))
+          (setq in-code-block nil
+                code-block-type nil))
+         
+         ;; Check for markdown code blocks (triple backticks)
          ((looking-at "^[ \t]*```")
-          (setq in-code-block (not in-code-block)))
-         ;; Check for drawers, but only outside code blocks
+          (if in-code-block
+              (when (eq code-block-type 'markdown)
+                (setq in-code-block nil
+                      code-block-type nil))
+            (setq in-code-block t
+                  code-block-type 'markdown)))
+         
+         ;; Check for drawers, but only when not in code blocks
          ((and (not in-code-block)
                (looking-at drawer-re))
-          (let ((drawer-start (match-beginning 0)))
+          (let ((drawer-start (point)))
             (when (re-search-forward "^[ \t]*:END:[ \t]*$" nil t)
               (forward-line 1)
               (delete-region drawer-start (point))
-              (goto-char drawer-start)))))
+              ;; Go back to the start so we don't skip lines
+              (goto-char drawer-start)
+              (setq continue-search t)
+              ;; Skip the following checks and continue loop
+              (forward-line 0)
+              (next-iteration)
+              ))))
+        
         (forward-line 1)))
     (buffer-string)))
 
