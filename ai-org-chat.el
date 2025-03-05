@@ -646,7 +646,11 @@ When `ai-org-chat-fold-tool-drawers' is non-nil, drawers are folded."
     (let ((tool-result-start (point)))
       (insert ":TOOL_RESULT:\n"
               (format "%s" result)
-              "\n:END:\n\n")
+              "\n:END:")
+      ;; Insert a single newline to separate from the next content
+      ;; but avoid multiple consecutive newlines
+      (unless (looking-at "\n")
+        (insert "\n"))
       (when ai-org-chat-fold-tool-drawers
         (save-excursion
           (goto-char tool-call-start)
