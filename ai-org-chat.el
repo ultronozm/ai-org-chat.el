@@ -1164,55 +1164,6 @@ This function handles:
 
 (require 'ace-window)
 
-(defun ai-org-chat--compare-impl (src-buf aux-bufs)
-  "Implement comparison logic for SRC-BUF against AUX-BUFS and visible buffers.
-SRC-BUF is the buffer containing the source code to be compared.
-AUX-BUFS is a list of auxiliary buffers to search for matching definitions.
-
-This function:
-1. Checks if SRC-BUF contains a single definition
-2. If so, tries to find a matching definition in AUX-BUFS and visible buffers
-3. Sets up an ediff session for the matched definitions or whole buffers
-4. Handles window management for the comparison"
-  (with-current-buffer src-buf
-    (goto-char (point-min))
-    (let ((comparison-set-up nil)
-          (visible-buffers (seq-uniq
-                            (mapcar #'window-buffer
-                                    (seq-remove
-                                     (lambda (window)
-                                       (eq (window-buffer window) src-buf))
-                                     (window-list))))))
-      (when (ai-org-chat--single-defun-p)
-        (when-let* ((signature (ai-org-chat--extract-defun-signature))
-                    (matching-info (ai-org-chat--find-matching-defun
-                                    signature
-                                    (seq-uniq
-                                     (append
-                                      (seq-remove
-                                       (lambda (buf) (eq src-buf buf))
-                                       aux-bufs)
-                                      visible-buffers)))))
-          (ai-org-chat--setup-ediff (nth 0 matching-info) src-buf
-                                    (list (nth 1 matching-info)
-                                          (nth 2 matching-info)))
-          (setq comparison-set-up t)))
-      (unless comparison-set-up
-        (let* ((all-candidate-buffers (seq-uniq (append visible-buffers aux-bufs)))
-               (buf-to-compare
-                (if (= (length all-candidate-buffers) 1)
-                    (car all-candidate-buffers)
-                  (if (> (length visible-buffers) 0)
-                      (if (> (length visible-buffers) 1)
-                          (window-buffer
-                           (aw-select "Select window for comparison"))
-                        (car visible-buffers))
-                    (get-buffer
-                     (completing-read "Select buffer to compare: "
-                                      (mapcar #'buffer-name all-candidate-buffers)
-                                      nil t))))))
-          (ai-org-chat--setup-ediff buf-to-compare src-buf))))))
-
 (defun ai-org-chat--get-context-buffers ()
   "Get list of buffers specified in CONTEXT properties."
   (let ((buffer-names (ai-org-chat--property-values "CONTEXT")))
@@ -1228,34 +1179,82 @@ This function:
 (defun ai-org-chat-compare ()
   "Compare a source block with appropriate content using ediff.
 If there are live source buffers defined via SOURCE_BUFFER properties,
-compares against the first matching one.  Otherwise, if the source block
-is a single function or class definition, tries to find a matching
-definition in other visible buffers and compares them directly."
+compares against the first matching one.  Otherwise, tries to find a
+matching definition or prompts for a buffer to compare with."
   (interactive)
   (let* ((element (org-element-at-point))
          (type (org-element-type element)))
-    (when (memq type '(src-block example-block))
-      (let* ((org-src-window-setup 'current-window)
-             (aux-bufs (ai-org-chat--get-context-buffers))
-             (source-buffer-names (ai-org-chat--property-values "SOURCE_BUFFER"))
-             (src-buf nil))
+    (unless (memq type '(src-block example-block))
+      (user-error "Point must be in a source block or example block"))
 
-        (dolist (buffer-name source-buffer-names)
-          (when-let ((buffer (get-buffer buffer-name)))
-            (when (and (buffer-live-p buffer) (not src-buf))
-              (setq src-buf buffer))))
+    (let* ((org-src-window-setup 'current-window)
+           (source-buffer-names (ai-org-chat--property-values "SOURCE_BUFFER"))
+           (source-buf (seq-find (lambda (name)
+                                   (when-let* ((buf (get-buffer name)))
+                                     (buffer-live-p buf)))
+                                 source-buffer-names)))
 
-        (condition-case err
-            (progn
-              (tab-duplicate)
-              (org-edit-special)
-              (if (and src-buf (buffer-live-p src-buf))
-                  (ai-org-chat--setup-ediff src-buf
-                                            (current-buffer))
-                (ai-org-chat--compare-impl (current-buffer) aux-bufs)))
-          (error
-           (tab-bar-close-tab)
-           (signal (car err) (cdr err))))))))
+      (condition-case err
+          (progn
+            (tab-duplicate)
+            (org-edit-special)
+            (let ((edited-buf (current-buffer)))
+              ;; PRIORITY 1: Use source buffer from properties if available
+              (if source-buf
+                  (ai-org-chat--setup-ediff (get-buffer source-buf) edited-buf)
+
+                ;; Otherwise, we need to find something to compare with
+                (let* ((aux-bufs (ai-org-chat--get-context-buffers))
+                       (visible-buffers (seq-remove
+                                         (lambda (buf) (eq buf edited-buf))
+                                         (seq-uniq (mapcar #'window-buffer (window-list)))))
+                       (all-candidate-buffers (seq-uniq (append visible-buffers aux-bufs)))
+                       (single-defun-p (with-current-buffer edited-buf
+                                         (ai-org-chat--single-defun-p))))
+
+                  (cond
+                   ;; PRIORITY 2: Find matching definition for a single defun
+                   ((and single-defun-p
+                         (with-current-buffer edited-buf
+                           (when-let* ((signature (ai-org-chat--extract-defun-signature))
+                                       (matching-info
+                                        (ai-org-chat--find-matching-defun
+                                         signature
+                                         (seq-remove (lambda (buf) (eq buf edited-buf))
+                                                     all-candidate-buffers))))
+                             (ai-org-chat--setup-ediff
+                              (nth 0 matching-info) edited-buf
+                              (list (nth 1 matching-info) (nth 2 matching-info)))
+                             t))))
+
+                   ;; PRIORITY 3: Only one candidate - use it directly
+                   ((= (length all-candidate-buffers) 1)
+                    (ai-org-chat--setup-ediff (car all-candidate-buffers) edited-buf))
+
+                   ;; PRIORITY 4: Multiple visible buffers - use ace-window
+                   ((> (length visible-buffers) 0)
+                    (let ((buf-to-compare
+                           (if (= (length visible-buffers) 1)
+                               (car visible-buffers)
+                             (window-buffer (aw-select "Select window for comparison")))))
+                      (ai-org-chat--setup-ediff buf-to-compare edited-buf)))
+
+                   ;; PRIORITY 5: Only aux buffers available - use completing-read
+                   ((> (length all-candidate-buffers) 0)
+                    (let ((buf-to-compare
+                           (get-buffer
+                            (completing-read "Select buffer to compare: "
+                                             (mapcar #'buffer-name all-candidate-buffers)
+                                             nil t))))
+                      (ai-org-chat--setup-ediff buf-to-compare edited-buf)))
+
+                   ;; No candidates at all
+                   (t
+                    (message "No buffer available for comparison")
+                    (tab-bar-close-tab)))))))
+        (error
+         (tab-bar-close-tab)
+         (signal (car err) (cdr err)))))))
 
 ;;; Model selection convenience functions
 
@@ -1607,6 +1606,7 @@ user and assistant."
             "\n\n"))))
     (kill-new formatted-string)
     (message "Conversation copied to clipboard")))
+
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
