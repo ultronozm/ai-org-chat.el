@@ -318,7 +318,7 @@ either a string or llm-multipart object."
 
 ;;; Collecting context and tools entries
 
-(defun ai-org-chat--collected-inherited-properties (property)
+(defun ai-org-chat--property-values (property)
   "Get unique values for PROPERTY from current and ancestor nodes."
   (let ((items (org-entry-get-multivalued-property (point-min) property)))
     (save-excursion
@@ -484,10 +484,10 @@ string containing the wrapped content."
            (plist-get content-plist :content)))
     (funcall ai-org-chat-content-wrapper content-plist)))
 
-(defun ai-org-chat--get-property-content (property header)
+(defun ai-org-chat--property-content (property header)
   "Get content from sources referenced by PROPERTY, formatted with HEADER.
 Returns a formatted string with all contents, or nil if none found."
-  (let* ((items (ai-org-chat--collected-inherited-properties property))
+  (let* ((items (ai-org-chat--property-values property))
          (contents (delq nil (mapcar #'ai-org-chat--extract-source-content items))))
     (when contents
       (concat header "\n\n"
@@ -1215,7 +1215,7 @@ This function:
 
 (defun ai-org-chat--get-context-buffers ()
   "Get list of buffers specified in CONTEXT properties."
-  (let ((buffer-names (ai-org-chat--collected-inherited-properties "CONTEXT")))
+  (let ((buffer-names (ai-org-chat--property-values "CONTEXT")))
     (cl-remove-if-not #'identity
                       (mapcar (lambda (name)
                                 (or (get-buffer name)
@@ -1237,7 +1237,7 @@ definition in other visible buffers and compares them directly."
     (when (memq type '(src-block example-block))
       (let* ((org-src-window-setup 'current-window)
              (aux-bufs (ai-org-chat--get-context-buffers))
-             (source-buffer-names (ai-org-chat--collected-inherited-properties "SOURCE_BUFFER"))
+             (source-buffer-names (ai-org-chat--property-values "SOURCE_BUFFER"))
              (src-buf nil))
 
         (dolist (buffer-name source-buffer-names)
@@ -1510,7 +1510,7 @@ With prefix ARG, show the transient interface instead."
     (unless ai-org-chat-provider
       (user-error "No LLM provider set.  Use `ai-org-chat-select-model' to choose a model"))
     (let* ((system ai-org-chat-system-message)
-           (context (ai-org-chat--get-property-content "CONTEXT" "Context:"))
+           (context (ai-org-chat--property-content "CONTEXT" "Context:"))
            (system-context (concat system "\n" context))
            (messages (ai-org-chat--get-conversation-history))
            (start (save-excursion
@@ -1520,12 +1520,12 @@ With prefix ARG, show the transient interface instead."
                       (ai-org-chat--create-heading ai-org-chat-user-name))
                     (point-marker)))
            (end (copy-marker start t))
-           (tool-names (ai-org-chat--collected-inherited-properties "TOOLS"))
+           (tool-names (ai-org-chat--property-values "TOOLS"))
            (tools (delq nil (mapcar #'ai-org-chat--lookup-tool tool-names)))
            (wrapped-tools (mapcar (lambda (tool)
                                     (ai-org-chat--create-logging-tool tool start))
                                   tools))
-           (source-content (ai-org-chat--get-property-content "SOURCE_BUFFER" "Active source buffer contents:"))
+           (source-content (ai-org-chat--property-content "SOURCE_BUFFER" "Active source buffer contents:"))
            ;; Add source buffer content to the user's last message
            (final-message-contents
             (if (and source-content (> (length messages) 0))
@@ -1583,7 +1583,7 @@ This includes the system message, context, and all exchanges between
 user and assistant."
   (interactive)
   (let* ((system-msg ai-org-chat-system-message)
-         (context (ai-org-chat--get-property-content "CONTEXT" "Context:"))
+         (context (ai-org-chat--property-content "CONTEXT" "Context:"))
          (messages (ai-org-chat--get-conversation-history))
          (indexed-messages (seq-map-indexed #'cons messages))
          (formatted-string
