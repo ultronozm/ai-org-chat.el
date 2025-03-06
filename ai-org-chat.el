@@ -1310,8 +1310,7 @@ them directly."
             (progn
               (tab-duplicate)
               (org-edit-special)
-              (if (and src-buf
-                       (buffer-live-p src-buf))
+              (if (and src-buf (buffer-live-p src-buf))
                   (ai-org-chat--setup-ediff src-buf
                                             (current-buffer))
                 (ai-org-chat--compare-impl (current-buffer) aux-bufs)))
