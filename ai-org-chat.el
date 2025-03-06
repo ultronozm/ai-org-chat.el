@@ -288,44 +288,30 @@ EXCLUDED-DRAWERS should be a list of drawer names without colons."
 Removes drawers listed in `ai-org-chat-excluded-drawers'."
   (ai-org-chat--filter-drawers text ai-org-chat-excluded-drawers))
 
-(defun ai-org-chat--prepare-message-content (beg end)
-  "Prepare message content from region BEG to END.
+(defun ai-org-chat--get-entry-message ()
+  "Get message from current entry.
 Returns either a string for text-only content or an llm-multipart object
-for content with media (images and/or PDFs).
-Filters out tool-related drawers from text content."
-  (let ((parts (ai-org-chat--split-entry-content beg end)))
-    (if (and (= (length parts) 1)
-             (eq (car (car parts)) :text))
-        (ai-org-chat--filter-tool-drawers (plist-get (car parts) :text))
-      (apply #'llm-make-multipart
-             (mapcar (lambda (part)
-                       (pcase (car part)
-                         (:text (ai-org-chat--filter-tool-drawers (plist-get part :text)))
-                         (:image (plist-get part :image))
-                         (:pdf (make-llm-media
-                                :mime-type "application/pdf"
-                                :data (plist-get part :pdf)))))
-                     parts)))))
-
-(defun ai-org-chat--get-entry-region ()
-  "Get region of current entry's content.
-Returns (cons beg end) where beg is the position after the heading
-and end is the position before the next heading.
-Note: The actual drawer filtering is done in `ai-org-chat--filter-drawers'."
+for content with media (images and/or PDFs).  Filters out tool-related
+drawers from text content."
   (save-excursion
     (org-back-to-heading)
-    (let ((content-start (line-beginning-position 2))
-          (content-end (save-excursion
-                         (outline-next-heading)
-                         (point))))
-      (cons content-start content-end))))
-
-(defun ai-org-chat--get-entry-message ()
-  "Get message from current entry as (heading . content) cons cell."
-  (let ((region (ai-org-chat--get-entry-region)))
-    (cons (org-get-heading t t)
-          (ai-org-chat--prepare-message-content
-           (car region) (cdr region)))))
+    (let* ((beg (line-beginning-position 2))
+           (end (save-excursion
+                  (outline-next-heading)
+                  (point)))
+           (parts (ai-org-chat--split-entry-content beg end)))
+      (if (and (= (length parts) 1)
+               (eq (car (car parts)) :text))
+          (ai-org-chat--filter-tool-drawers (plist-get (car parts) :text))
+        (apply #'llm-make-multipart
+               (mapcar (lambda (part)
+                         (pcase (car part)
+                           (:text (ai-org-chat--filter-tool-drawers (plist-get part :text)))
+                           (:image (plist-get part :image))
+                           (:pdf (make-llm-media
+                                  :mime-type "application/pdf"
+                                  :data (plist-get part :pdf)))))
+                       parts))))))
 
 (defun ai-org-chat--get-conversation-history ()
   "Get list of conversation messages up to current entry.
