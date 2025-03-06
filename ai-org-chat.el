@@ -155,9 +155,7 @@ is non-nil."
          (and ai-org-chat-enable-images
               (member 'image-input (llm-capabilities ai-org-chat-provider)))))
     (if (not (or ai-org-chat-enable-images ai-org-chat-enable-pdfs))
-        ;; If both images and PDFs are disabled, return all content as text
         (list `(:text ,(buffer-substring-no-properties beg end)))
-      ;; Otherwise, process images and/or PDFs as before
       (let ((parts nil)
             (pos beg)
             (file-extension-re (concat (if ai-org-chat-enable-images
@@ -168,7 +166,6 @@ is non-nil."
                                          ""))))
         (save-excursion
           (goto-char beg)
-          ;; Find all media links
           (while (re-search-forward "\\[\\[\\(?:file\\|attachment\\):" end t)
             (let* ((link (org-element-lineage
                           (org-element-context)
@@ -177,47 +174,42 @@ is non-nil."
                    (link-end (org-element-end link))
                    (path (org-element-property :path link)))
               (when (and path (string-match-p file-extension-re path))
-                ;; Check if the link is standalone
                 (save-excursion
                   (goto-char link-beg)
                   (beginning-of-line)
-                  (let* ((line-beg (point))
-                         (line-content-before (buffer-substring-no-properties
-                                               line-beg link-beg))
-                         (line-content-after (buffer-substring-no-properties
-                                              link-end
-                                              (line-end-position)))
-                         (prev-line-empty (save-excursion
-                                            (forward-line -1)
-                                            (looking-at-p "^[ \t]*$")))
-                         (next-line-empty (save-excursion
-                                            (forward-line 1)
-                                            (looking-at-p "^[ \t]*$"))))
-                    (when (and (string-match-p "^[ \t]*$" line-content-before)
-                               (string-match-p "^[ \t]*$" line-content-after)
-                               prev-line-empty
-                               next-line-empty)
-                      ;; Add text before the media, if any
+                  (let ((line-beg (point)))
+                    (when (let ((line-content-before (buffer-substring-no-properties
+                                                      line-beg link-beg))
+                                (line-content-after (buffer-substring-no-properties
+                                                     link-end
+                                                     (line-end-position)))
+                                (prev-line-empty (save-excursion
+                                                   (forward-line -1)
+                                                   (looking-at-p "^[ \t]*$")))
+                                (next-line-empty (save-excursion
+                                                   (forward-line 1)
+                                                   (looking-at-p "^[ \t]*$"))))
+                            ;; Check if the link is standalone
+                            (and (string-match-p "^[ \t]*$" line-content-before)
+                                 (string-match-p "^[ \t]*$" line-content-after)
+                                 prev-line-empty
+                                 next-line-empty))
                       (when (< pos line-beg)
                         (let ((text (buffer-substring-no-properties pos line-beg)))
                           (unless (string-match-p "\\`[ \t\n]*\\'" text)
                             (push `(:text ,text) parts))))
-                      ;; Add the media
                       (let ((full-path (expand-file-name path)))
                         (push (if (string-match-p "\\.pdf\\'" full-path)
-                                  ;; Handle PDF
                                   `(:pdf ,(with-temp-buffer
                                             (set-buffer-multibyte nil)
                                             (insert-file-contents-literally full-path)
                                             (buffer-string)))
-                                ;; Handle image
                                 `(:image ,(create-image full-path)))
                               parts))
                       (setq pos (save-excursion
                                   (goto-char link-end)
                                   (forward-line 1)
                                   (point)))))))))
-          ;; Add remaining text, if any
           (when (< pos end)
             (let ((text (buffer-substring-no-properties pos end)))
               (unless (string-match-p "\\`[ \t\n]*\\'" text)
