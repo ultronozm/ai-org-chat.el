@@ -224,7 +224,7 @@ is non-nil."
                 (push `(:text ,text) parts))))
           (nreverse parts))))))
 
-(defcustom ai-org-chat-excluded-drawers '("PROPERTIES" "TOOL_CALL" "TOOL_RESULT")
+(defcustom ai-org-chat-excluded-drawers '("PROPERTIES" "TOOL_CALL" "TOOL_RESULT" "QUOTED_REGION")
   "List of drawer names that should be excluded from chat messages.
 Each entry should be a string without the colon delimiters."
   :type '(repeat string)
@@ -339,22 +339,12 @@ either a string or llm-multipart object."
           (setq not-done (org-up-heading-safe)))))
     (delete-dups items)))
 
-(defun ai-org-chat--collect-context-sources ()
-  "Get list of context items from CONTEXT properties up the tree."
-  (ai-org-chat--collected-inherited-properties "CONTEXT"))
-
 (defun ai-org-chat--lookup-tool (name)
   "Look up tool by NAME in `ai-org-chat-tools'.
 NAME is a string that should match the :name field of a tool."
   (seq-find (lambda (tool)
               (string= name (llm-tool-name tool)))
             ai-org-chat-tools))
-
-(defun ai-org-chat--collect-tools ()
-  "Get list of tools specified by TOOLS properties up the tree.
-Each tool name in the TOOLS property is looked up in `ai-org-chat-tools'."
-  (let ((tool-names (ai-org-chat--collected-inherited-properties "TOOLS")))
-    (delq nil (mapcar #'ai-org-chat--lookup-tool tool-names))))
 
 (defun ai-org-chat-register-tool (tool)
   "Register TOOL, making it available for use in AI chat.
@@ -502,13 +492,14 @@ string containing the wrapped content."
            (plist-get content-plist :content)))
     (funcall ai-org-chat-content-wrapper content-plist)))
 
-(defun ai-org-chat--assemble-full-context ()
-  "Get all context items and concatenate them into a single string."
-  (let* ((items (ai-org-chat--collect-context-sources))
-         (contexts (delq nil (mapcar #'ai-org-chat--extract-source-content items))))
-    (when contexts
-      (concat "Context:\n\n"
-              (string-join contexts "\n")))))
+(defun ai-org-chat--get-property-content (property header)
+  "Get content from sources referenced by PROPERTY, formatted with HEADER.
+Returns a formatted string with all contents, or nil if none found."
+  (let* ((items (ai-org-chat--collected-inherited-properties property))
+         (contents (delq nil (mapcar #'ai-org-chat--extract-source-content items))))
+    (when contents
+      (concat header "\n\n"
+              (string-join contents "\n")))))
 
 ;;; Response generation
 
@@ -560,34 +551,6 @@ Adds commas before asterisks that could be interpreted as org headings:
   "AI name to insert into buffer."
   :type 'string)
 
-(defun ai-org-chat--call-with-functions (provider prompt buffer point remaining-depth)
-  "Call the LLM, optionally streaming output to buffer.
-PROVIDER supplies the LLM service.  PROMPT is the input for the LLM.
-BUFFER and POINT specify where to insert the response.
-REMAINING-DEPTH determines how many more recursive calls are allowed."
-  (let* ((start (with-current-buffer buffer (copy-marker point nil)))
-         (end (with-current-buffer buffer (copy-marker point t)))
-         (captured-buffer buffer)
-         ;; Always enable streaming if the user wants it
-         (streaming-p ai-org-chat-streaming-p)
-         (partial-cb (when streaming-p
-                       (lambda (response)
-                         (ai-org-chat--insert-text start end response))))
-         (final-cb
-          (lambda (response)
-            (ai-org-chat--handle-final-response
-             prompt response start end remaining-depth provider)))
-         (error-cb
-          (lambda (err msg)
-            (with-current-buffer captured-buffer
-              (goto-char end)
-              (insert (format "\nError: %s - %s\n" err msg)))
-            (ai-org-chat--handle-final-response
-             prompt (format "Error: %s - %s" err msg) start end remaining-depth provider))))
-    (if streaming-p
-        (llm-chat-streaming provider prompt partial-cb final-cb error-cb)
-      (llm-chat-async provider prompt final-cb error-cb))))
-
 (defun ai-org-chat--handle-final-response (prompt response start end remaining-depth provider)
   "Handle the final RESPONSE from the LLM.
 PROMPT is the original prompt used for the query.
@@ -610,6 +573,33 @@ PROVIDER is the LLM service provider."
         (goto-char end)
         (insert "\nMaximum recursive depth reached or unknown response type"))))))
 
+(defun ai-org-chat--call-with-functions (provider prompt buffer point remaining-depth)
+  "Call the LLM, optionally streaming output to buffer.
+PROVIDER supplies the LLM service.  PROMPT is the input for the LLM.
+BUFFER and POINT specify where to insert the response.
+REMAINING-DEPTH determines how many more recursive calls are allowed."
+  (let* ((start (with-current-buffer buffer (copy-marker point nil)))
+         (end (with-current-buffer buffer (copy-marker point t)))
+         (captured-buffer buffer)
+         (streaming-p ai-org-chat-streaming-p)
+         (partial-cb (when streaming-p
+                       (lambda (response)
+                         (ai-org-chat--insert-text start end response))))
+         (final-cb
+          (lambda (response)
+            (ai-org-chat--handle-final-response
+             prompt response start end remaining-depth provider)))
+         (error-cb
+          (lambda (err msg)
+            (with-current-buffer captured-buffer
+              (goto-char end)
+              (insert (format "\nError: %s - %s\n" err msg)))
+            (ai-org-chat--handle-final-response
+             prompt (format "Error: %s - %s" err msg) start end remaining-depth provider))))
+    (if streaming-p
+        (llm-chat-streaming provider prompt partial-cb final-cb error-cb)
+      (llm-chat-async provider prompt final-cb error-cb))))
+
 (defun ai-org-chat--insert-tool-result (tool args result)
   "Insert tool call and result information at point.
 TOOL is the tool object, ARGS are the arguments passed to the tool,
@@ -630,8 +620,6 @@ When `ai-org-chat-fold-tool-drawers' is non-nil, drawers are folded."
       (insert ":TOOL_RESULT:\n"
               (format "%s" result)
               "\n:END:")
-      ;; Insert a single newline to separate from the next content
-      ;; but avoid multiple consecutive newlines
       (unless (looking-at "\n")
         (insert "\n"))
       (when ai-org-chat-fold-tool-drawers
@@ -680,54 +668,25 @@ This wraps the original tool function to:
        :args (llm-tool-args tool)
        :async (llm-tool-async tool)))))
 
-(defun ai-org-chat--create-heading (heading)
-  "Create new subtree with HEADING as heading."
-  (org-insert-heading-after-current)
-  (insert heading)
-  (org-demote-subtree))
-
 (defvar ai-org-chat-max-recursion-depth 10
   "Maximum number of recursive calls allowed in ai-org-chat queries.")
 
-(defconst ai-org-chat--active-region-prefix
-  "Active region contents:\n\n"
-  "Prefix text used when including active region contents in messages.")
-
-(defvar-local ai-org-chat--source-buffer nil
-  "Indirect buffer holding the user's region for this AI chat.
-If non-nil, it is killed when this conversation buffer is killed.  This
-variable is populated when the user calls `ai-org-chat-new' with an
-active region.  We kill it automatically when the conversation buffer is
-killed.")
-
-(defun ai-org-chat--prepare-source-content ()
-  "Prepare the source buffer content for inclusion in messages.
-Returns the wrapped content string if there's a live source buffer,
-nil otherwise."
-  (when (and ai-org-chat--source-buffer
-             (buffer-live-p ai-org-chat--source-buffer))
-    (with-current-buffer ai-org-chat--source-buffer
-      (let ((content-plist
-             (list :name "Active region"
-                   :mode major-mode
-                   :language (replace-regexp-in-string
-                              "-mode$" "" (symbol-name major-mode))
-                   :content (buffer-substring-no-properties
-                             (point-min) (point-max)))))
-        (concat ai-org-chat--active-region-prefix
-                (funcall ai-org-chat-content-wrapper content-plist))))))
-
 ;;; Convenience functions for populating CONTEXT and TOOLS
+
+(defun ai-org-chat--add-to-property (property items &optional friendly-name)
+  "Helper function to add ITEMS to the PROPERTY of the current org node.
+ITEMS is a list of strings to add to the property.
+FRIENDLY-NAME is a human-readable name for the property; defaults to PROPERTY."
+  (let* ((current-values (org-entry-get-multivalued-property (point) property))
+         (new-values (delete-dups (append current-values items)))
+         (name (or friendly-name property)))
+    (apply #'org-entry-put-multivalued-property (point) property new-values)
+    (message "Added %d item(s) to %s" (length items) name)))
 
 (defun ai-org-chat--add-context (items)
   "Helper function to add context to the current org node.
 ITEMS is a list of strings to add to the context."
-  (let* ((current-context
-          (org-entry-get-multivalued-property (point) "CONTEXT"))
-         (new-items (delete-dups (append current-context items))))
-    (apply #'org-entry-put-multivalued-property (point) "CONTEXT" new-items)
-    (message "Added %d item(s) to context"
-             (length items))))
+  (ai-org-chat--add-to-property "CONTEXT" items "context"))
 
 ;;;###autoload
 (defun ai-org-chat-add-buffer-context ()
@@ -864,18 +823,24 @@ to filter the files (e.g., \"*.py\" for Python files)."
   "Add selected tools to the current org node's TOOLS property.
 Prompts for tool names from `ai-org-chat-tools'."
   (interactive)
-  (let* ((tool-names
-          (mapcar #'llm-tool-name ai-org-chat-tools))
-         (selected-tools
-          (completing-read-multiple
-           "Select tools to add: "
-           tool-names)))
+  (let* ((tool-names (mapcar #'llm-tool-name ai-org-chat-tools))
+         (selected-tools (completing-read-multiple
+                          "Select tools to add: "
+                          tool-names)))
     (when selected-tools
-      (let* ((current-tools
-              (org-entry-get-multivalued-property (point) "TOOLS"))
-             (new-tools (delete-dups (append current-tools selected-tools))))
-        (apply #'org-entry-put-multivalued-property (point) "TOOLS" new-tools)
-        (message "Added %d tool(s)" (length selected-tools))))))
+      (ai-org-chat--add-to-property "TOOLS" selected-tools "tools"))))
+
+(defun ai-org-chat-add-source-buffer ()
+  "Add buffers as sources for the current org node.
+Creates a region indirect buffer if region is active, otherwise prompts
+for buffers."
+  (interactive)
+  (let ((selected-buffers
+         (completing-read-multiple
+          "Select buffers to add as sources: "
+          (mapcar #'buffer-name (buffer-list)))))
+    (when selected-buffers
+      (ai-org-chat--add-to-property "SOURCE_BUFFER" selected-buffers "source buffer"))))
 
 ;;; Setting up new chats
 
@@ -934,15 +899,19 @@ With prefix argument ARG, immediately call
                                   "-mode$" "" (symbol-name major-mode))
                        :content region-contents))))
           (deactivate-mark)
-          (let ((source-buf (ai-org-chat--make-source-buffer reg-beg reg-end)))
+          (let ((source-buf (ai-org-chat--make-source-buffer reg-beg reg-end))
+                (source-buf-name nil))
             (ai-org-chat-new-empty)
             (goto-char (point-max))
-            (insert wrapped-region-contents "\n")
-            (setq ai-org-chat--source-buffer source-buf)
+            (insert ":QUOTED_REGION:"
+                    wrapped-region-contents
+                    ":END:\n")
+            (setq source-buf-name (buffer-name source-buf))
+            (org-entry-put (point-min) "SOURCE_BUFFER" source-buf-name)
             (add-hook 'kill-buffer-hook
                       (lambda ()
-                        (when (buffer-live-p ai-org-chat--source-buffer)
-                          (kill-buffer ai-org-chat--source-buffer)))
+                        (when (buffer-live-p source-buf)
+                          (kill-buffer source-buf)))
                       nil t)))
       (ai-org-chat-new-empty))
     (when arg
@@ -967,6 +936,12 @@ Returns non-nil if found, nil otherwise."
             (not (equal (org-get-heading t t) ai-org-chat-ai-name))
             (setq not-at-top (org-up-heading-safe))))
     not-at-top))
+
+(defun ai-org-chat--create-heading (heading)
+  "Create new subtree with HEADING as heading."
+  (org-insert-heading-after-current)
+  (insert heading)
+  (org-demote-subtree))
 
 ;;;###autoload
 (defun ai-org-chat-branch ()
@@ -1230,7 +1205,6 @@ This function:
                                     (list (nth 1 matching-info)
                                           (nth 2 matching-info)))
           (setq comparison-set-up t)))
-
       (unless comparison-set-up
         (let* ((all-candidate-buffers (seq-uniq (append visible-buffers aux-bufs)))
                (buf-to-compare
@@ -1249,7 +1223,7 @@ This function:
 
 (defun ai-org-chat--get-context-buffers ()
   "Get list of buffers specified in CONTEXT properties."
-  (let ((buffer-names (ai-org-chat--collect-context-sources)))
+  (let ((buffer-names (ai-org-chat--collected-inherited-properties "CONTEXT")))
     (cl-remove-if-not #'identity
                       (mapcar (lambda (name)
                                 (or (get-buffer name)
@@ -1261,17 +1235,24 @@ This function:
 ;;;###autoload
 (defun ai-org-chat-compare ()
   "Compare a source block with appropriate content using ediff.
-If there's a live source buffer, compares against that.  Otherwise,
-if the source block is a single function or class definition, tries
-to find a matching definition in other visible buffers and compares
-them directly."
+If there are live source buffers defined via SOURCE_BUFFER properties,
+compares against the first matching one.  Otherwise, if the source block
+is a single function or class definition, tries to find a matching
+definition in other visible buffers and compares them directly."
   (interactive)
   (let* ((element (org-element-at-point))
          (type (org-element-type element)))
     (when (memq type '(src-block example-block))
-      (let ((org-src-window-setup 'current-window)
-            (aux-bufs (ai-org-chat--get-context-buffers))
-            (src-buf ai-org-chat--source-buffer))
+      (let* ((org-src-window-setup 'current-window)
+             (aux-bufs (ai-org-chat--get-context-buffers))
+             (source-buffer-names (ai-org-chat--collected-inherited-properties "SOURCE_BUFFER"))
+             (src-buf nil))
+
+        (dolist (buffer-name source-buffer-names)
+          (when-let ((buffer (get-buffer buffer-name)))
+            (when (and (buffer-live-p buffer) (not src-buf))
+              (setq src-buf buffer))))
+
         (condition-case err
             (progn
               (tab-duplicate)
@@ -1356,7 +1337,6 @@ them directly."
                                   args))
                :key-env "DEEPSEEK_KEY"
                :chat-model "deepseek-reasoner"))
-
     ("gemini-1.5-pro-latest" .
      (:package llm-gemini
                :provider make-llm-gemini
@@ -1451,6 +1431,9 @@ MODEL is a string key from `ai-org-chat-models'."
                :help "Add files from a directory"]
               ["Add Project Files Context" ai-org-chat-add-project-files-context
                :help "Add files from a project"])
+        (list "Source Buffer"
+              ["Add Source Buffer" ai-org-chat-add-source-buffer
+               :help "Add a buffer as source for the current node"])
         (list "Tools"
               ["Add Tools" ai-org-chat-add-tools
                :help "Add tool functions to the current node"])
@@ -1499,6 +1482,8 @@ MODEL is a string key from `ai-org-chat-models'."
     ("F" "Add function" ai-org-chat-add-function-context)
     ("d" "Add directory files" ai-org-chat-add-directory-files-context)
     ("p" "Add project files" ai-org-chat-add-project-files-context)]
+   ["Source"
+    ("s" "Add source buffer" ai-org-chat-add-source-buffer)]
    ["Tools"
     ("t" "Add tools" ai-org-chat-add-tools)]
    ["Format"
@@ -1533,7 +1518,7 @@ With prefix ARG, show the transient interface instead."
     (unless ai-org-chat-provider
       (user-error "No LLM provider set.  Use `ai-org-chat-select-model' to choose a model"))
     (let* ((system ai-org-chat-system-message)
-           (context (ai-org-chat--assemble-full-context))
+           (context (ai-org-chat--get-property-content "CONTEXT" "Context:"))
            (system-context (concat system "\n" context))
            (messages (ai-org-chat--get-conversation-history))
            (start (save-excursion
@@ -1543,13 +1528,22 @@ With prefix ARG, show the transient interface instead."
                       (ai-org-chat--create-heading ai-org-chat-user-name))
                     (point-marker)))
            (end (copy-marker start t))
-           (tools (ai-org-chat--collect-tools))
+           (tool-names (ai-org-chat--collected-inherited-properties "TOOLS"))
+           (tools (delq nil (mapcar #'ai-org-chat--lookup-tool tool-names)))
            (wrapped-tools (mapcar (lambda (tool)
                                     (ai-org-chat--create-logging-tool tool start))
                                   tools))
+           (source-content (ai-org-chat--get-property-content "SOURCE_BUFFER" "Active source buffer contents:"))
+           ;; Add source buffer content to the user's last message
+           (final-message-contents
+            (if (and source-content (> (length messages) 0))
+                (append
+                 (butlast messages)
+                 (list (concat source-content "\n\n" (car (last messages)))))
+              messages))
            (prompt (llm-make-chat-prompt
                     (mapcar #'ai-org-chat--ensure-utf8-encoding
-                            (mapcar #'cdr messages))
+                            final-message-contents)
                     :context (ai-org-chat--ensure-utf8-encoding system-context)
                     :tools wrapped-tools)))
       (let ((partial-cb
@@ -1597,8 +1591,9 @@ This includes the system message, context, and all exchanges between
 user and assistant."
   (interactive)
   (let* ((system-msg ai-org-chat-system-message)
-         (context (ai-org-chat--assemble-full-context))
+         (context (ai-org-chat--get-property-content "CONTEXT" "Context:"))
          (messages (ai-org-chat--get-conversation-history))
+         (indexed-messages (seq-map-indexed #'cons messages))
          (formatted-string
           (concat
            "System Message and Context:\n\n"
@@ -1606,17 +1601,17 @@ user and assistant."
            (if context (concat context "\n\n") "")
            "Conversation:\n\n"
            (mapconcat
-            (lambda (msg)
-              (let ((heading (car msg))
-                    (content (cdr msg)))
+            (lambda (indexed-msg)
+              (let ((index (cdr indexed-msg))
+                    (content (car indexed-msg)))
                 (format "<exchange>\n  <role>%s</role>\n  <content>\n%s\n  </content>\n</exchange>"
-                        (if (equal heading ai-org-chat-ai-name)
+                        (if (eq (% index 2) 1)
                             "assistant"
                           "user")
                         (if (stringp content)
                             content
                           (format "%S" content)))))
-            messages
+            indexed-messages
             "\n\n"))))
     (kill-new formatted-string)
     (message "Conversation copied to clipboard")))

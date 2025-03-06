@@ -57,7 +57,7 @@ As a final tip, the following makes environment variables available in Emacs on 
 #+end_src
 
 * Usage
-When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if you followed the above configuration).  This visits a new file in the specified directory ("~/gpt" by default).  If the region was active, then it will be quoted in the new buffer.  With a prefix argument (=C-u=), it will immediately add visible buffers as [[Context][context]] to the new chat.  Example:
+When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if you followed the above configuration).  This visits a new file in the specified directory ("~/gpt" by default).  If the region was active, then it will be quoted in the new buffer and a reference to the source will be stored in the =SOURCE_BUFFER= property.  This maintains a live connection to the original content so the AI always has access to the most recent version.  You can add additional source buffers by setting the =SOURCE_BUFFER= property in other conversation nodes.  With a prefix argument (=C-u=), it will immediately add visible buffers as [[Context][context]] to the new chat.  Example:
 
 #+attr_html: :width 800px
 #+attr_latex: :width 800px
@@ -73,9 +73,9 @@ We provide the following commands:
 - =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks between (point) and (point-max) to org-mode code blocks.
 - =ai-org-chat-replace-backticks-with-equal-signs= :: Interactively replace backtick quotes with =org-mode= verbatim quotes.
 
-* Context and Tools
+* Context, Tools, and Source Buffers
 
-ai-org-chat uses PROPERTIES drawers to manage context and tools for the AI conversation.  These can be set at the top level of the file or in individual nodes.
+ai-org-chat uses PROPERTIES drawers to manage all state related to the conversation.  Context sources, tools, and source buffers can be set at the top level of the file or in individual nodes, with properties at deeper levels inheriting from their ancestors.
 
 ** Context
 
@@ -91,6 +91,25 @@ Example:
 :CONTEXT: buffer-name.txt project-file.el my-context-function
 :END:
 #+end_example
+
+** Source Buffers
+
+Source buffers are managed through the =SOURCE_BUFFER= property.  When you create a new chat with an active region using =ai-org-chat-new=, the package creates an indirect buffer containing that region and stores a reference to it in the =SOURCE_BUFFER= property.  This allows the package to maintain a live connection to the original buffer.
+
+Source buffers serve a special role distinct from context sources:
+
+1. They represent the primary material being discussed or modified in the conversation
+2. Their current content is included with the final message sent to the AI, ensuring it always sees the latest version
+3. They're given priority when using =ai-org-chat-compare= to compare AI suggestions with your original code
+4. They're automatically cleaned up when the chat buffer is closed
+
+Like other properties, =SOURCE_BUFFER= can be set at any level in the org hierarchy and inherits from parent nodes.  This allows you to:
+
+- Set a main source buffer at the top level for the whole conversation
+- Add additional source buffers to specific conversation branches
+- Override source buffers for specific parts of the conversation
+
+While the AI can access all source buffers in its context, =ai-org-chat-compare= will prioritize the first available source buffer when comparing source blocks.
 
 ** Tools
 
@@ -125,6 +144,7 @@ While you can directly edit PROPERTIES drawers using Org mode's built-in command
 - =ai-org-chat-add-visible-buffers-context=: Add all visible buffers as context.
 - =ai-org-chat-add-file-context=: Add selected files as context.
 - =ai-org-chat-add-project-files-context=: Add all files from a selected project as context.
+- =ai-org-chat-add-source-buffer=: Add selected buffers as source buffers.
 - =ai-org-chat-add-tools=: Add selected tools from =ai-org-chat-tools= to the current node.
 
 These commands are designed to simplify context/tool management, but are not required for using the package.
@@ -143,11 +163,16 @@ The Ediff session is launched in a new tab and cleaned up automatically when you
 
 ** Workflow for revising part of a buffer
 There are many ways to do this.  Here's one typical workflow:
+1. Select the region that you want to modify.
+2. =C-x t 2= (=tab-bar-new-tab=) to create a new tab, then =C-c /= (or =M-x ai-org-chat-new=) to launch a chat session with the selected region.  The region's content will be quoted in the new buffer and a live connection to the source will be maintained via the =SOURCE_BUFFER= property.
+3. Ask the LLM to revise it, requesting the response in a source block (a good system message, or the function =ai-org-chat-convert-markdown-blocks-to-org=, maybe come in handy here).
+4. When you receive a response in a source block, use =C-c e= (=ai-org-chat-compare=) to inspect what was changed, and standard Ediff commands to apply parts of that change.  The comparison will automatically use the source buffer referenced in the =SOURCE_BUFFER= property.
+5. Iterate until you're happy with the changes.
+
+An alternative workflow that doesn't rely on the =SOURCE_BUFFER= property:
 1. Create a buffer containing the region that you want to modify, either immediately via =C-x n n= (=narrow-to-region=) or after first doing =M-x clone-indirect-buffer= (which I bind to =C-x c=).
 2. =C-x t 2= (=tab-bar-new-tab=) to create a new tab containing just the buffer containing the region of interest, then =C-u C-c /= (or =C-u M-x ai-org-chat-new=) to launch a chat session with the buffer of interest as context.
-3. Ask the LLM to revise it, requesting the response in a source block (a good system message, or the function =ai-org-chat-convert-markdown-blocks-to-org=, maybe come in handy here).
-4. When you receive a response in a source block, use =C-c e= (=ai-org-chat-compare=) to inspect what was changed, and standard Ediff commands to apply parts of that change.
-5. Iterate until you're happy with the changes.
+3. Follow steps 3-5 as above.
 
 The point here is that this is a very flexible workflow that leverages built-in features such as narrowing and Ediff.
 
