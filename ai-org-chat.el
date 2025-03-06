@@ -907,25 +907,6 @@ Create org buffer with timestamped filename and set it up for AI chat."
     (find-file path)
     (ai-org-chat-setup-buffer)))
 
-;;;###autoload
-(defun ai-org-chat-new-region (beg end)
-  "Start new AI chat, quoting region between BEG and END.
-Send user to an AI chat buffer.  Copy current region contents into that buffer."
-  (interactive "r")
-  (let* ((content (ai-org-chat--ensure-trailing-newline
-                   (buffer-substring-no-properties beg end)))
-         (region-contents
-          (ai-org-chat--wrap-org
-           (list :name ""
-                 :mode major-mode
-                 :language (replace-regexp-in-string
-                            "-mode$" "" (symbol-name major-mode))
-                 :content content))))
-    (ai-org-chat-new-empty)
-    (save-excursion
-      (newline)
-      (insert region-contents))))
-
 (defun ai-org-chat--make-source-buffer (beg end)
   "Create an indirect buffer for region BEG..END of current buffer."
   (let* ((source-buf (current-buffer))
