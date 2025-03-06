@@ -115,7 +115,7 @@ insert local variables, and add initial heading."
 (defun ai-org-chat--clean-text (text)
   "Clean TEXT by removing protective commas before org headings.
 This function removes commas that were added by
-`ai-org-chat--process-response-text' to protect org-mode structure:
+`ai-org-chat--process-response-text' to protect `org-mode' structure:
 - removes comma if text starts with ',*'
 - removes comma in all occurrences of '\n,*'
 
@@ -128,17 +128,17 @@ This is used when preparing conversation history to send to the LLM."
 
 (defcustom ai-org-chat-enable-images t
   "Whether to enable image processing in AI chat conversations.
-When non-nil, standalone images in the conversation will be included
-in the context sent to the AI model.  When nil, images will be
-treated as regular org-mode links."
+When non-nil, standalone images in the conversation will be included in
+the context sent to the AI model.  When nil, images will be treated as
+regular org-mode links."
   :type 'boolean
   :group 'ai-org-chat)
 
 (defcustom ai-org-chat-enable-pdfs t
   "Whether to enable PDF processing in AI chat conversations.
 When non-nil, standalone PDF links in the conversation will be included
-in the context sent to the AI model.  When nil, PDFs will be
-treated as regular org-mode links."
+in the context sent to the AI model.  When nil, PDFs will be treated as
+regular org-mode links."
   :type 'boolean
   :group 'ai-org-chat)
 
@@ -250,13 +250,13 @@ EXCLUDED-DRAWERS should be a list of drawer names without colons."
            ((looking-at "^[ \t]*#\\+begin_\\(src\\|example\\)")
             (setq in-code-block t
                   code-block-type 'org))
-           
+
            ((and in-code-block
                  (eq code-block-type 'org)
                  (looking-at "^[ \t]*#\\+end_\\(src\\|example\\)"))
             (setq in-code-block nil
                   code-block-type nil))
-           
+
            ;; Check for markdown code blocks (triple backticks)
            ((looking-at "^[ \t]*```")
             (if in-code-block
@@ -265,7 +265,7 @@ EXCLUDED-DRAWERS should be a list of drawer names without colons."
                         code-block-type nil))
               (setq in-code-block t
                     code-block-type 'markdown)))
-           
+
            ;; Check for drawers, but only when not in code blocks
            ((and (not in-code-block)
                  (looking-at drawer-re))
@@ -277,7 +277,7 @@ EXCLUDED-DRAWERS should be a list of drawer names without colons."
                 (goto-char drawer-start)
                 ;; Don't process any further conditions for this iteration
                 (setq continue-loop nil)))))
-          
+
           ;; Only move to next line if we didn't do a special operation
           (when continue-loop
             (forward-line 1)))))
@@ -296,9 +296,7 @@ Filters out tool-related drawers from text content."
   (let ((parts (ai-org-chat--split-entry-content beg end)))
     (if (and (= (length parts) 1)
              (eq (car (car parts)) :text))
-        ;; Text-only content - filter tool drawers
         (ai-org-chat--filter-tool-drawers (plist-get (car parts) :text))
-      ;; Mixed content - convert to multipart and filter text parts
       (apply #'llm-make-multipart
              (mapcar (lambda (part)
                        (pcase (car part)
@@ -654,14 +652,14 @@ When `ai-org-chat-fold-tool-drawers' is non-nil, drawers are folded."
       (when ai-org-chat-fold-tool-drawers
         (save-excursion
           (goto-char tool-call-start)
-          (org-flag-drawer t)
+          (org-fold-hide-drawer-toggle t)
           (goto-char tool-result-start)
-          (org-flag-drawer t))))))
+          (org-fold-hide-drawer-toggle t))))))
 
 (defun ai-org-chat--create-logging-tool (tool marker)
   "Create a version of TOOL that logs its calls and results at MARKER.
-TOOL is an llm-tool object. Returns a new llm-tool
-object with logging behavior added.
+TOOL is an llm-tool object.  Returns a new llm-tool object with logging
+behavior added.
 
 This wraps the original tool function to:
 1. Execute the tool with the provided arguments
@@ -1568,7 +1566,7 @@ With prefix ARG, show the transient interface instead."
     (ai-org-chat-menu))
    (t
     (unless ai-org-chat-provider
-      (user-error "No LLM provider set. Use `ai-org-chat-select-model' to choose a model"))
+      (user-error "No LLM provider set.  Use `ai-org-chat-select-model' to choose a model"))
     (let* ((system ai-org-chat-system-message)
            (context (ai-org-chat--assemble-full-context))
            (system-context (concat system "\n" context))
