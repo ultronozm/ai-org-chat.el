@@ -320,24 +320,24 @@ Note: The actual drawer filtering is done in `ai-org-chat--filter-drawers'."
                          (point))))
       (cons content-start content-end))))
 
+(defun ai-org-chat--get-entry-message ()
+  "Get message from current entry as (heading . content) cons cell."
+  (let ((region (ai-org-chat--get-entry-region)))
+    (cons (org-get-heading t t)
+          (ai-org-chat--prepare-message-content
+           (car region) (cdr region)))))
+
 (defun ai-org-chat--get-conversation-history ()
   "Get list of conversation messages up to current entry.
 Each message is a cons cell (heading . content) where content is
 either a string or llm-multipart object."
   (let ((messages nil))
     (save-excursion
-      (let ((region (ai-org-chat--get-entry-region)))
-        (push (cons (org-get-heading t t)
-                    (ai-org-chat--prepare-message-content
-                     (car region) (cdr region)))
-              messages))
+      (push (ai-org-chat--get-entry-message) messages)
       (while (org-up-heading-safe)
-        (let ((region (ai-org-chat--get-entry-region)))
-          (push (cons (org-get-heading t t)
-                      (ai-org-chat--prepare-message-content
-                       (car region) (cdr region)))
-                messages))))
+        (push (ai-org-chat--get-entry-message) messages)))
     messages))
+
 
 ;;; Collecting context and tools entries
 
