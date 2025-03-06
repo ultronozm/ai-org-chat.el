@@ -324,7 +324,6 @@ either a string or llm-multipart object."
         (push (ai-org-chat--get-entry-message) messages)))
     messages))
 
-
 ;;; Collecting context and tools entries
 
 (defun ai-org-chat--collected-inherited-properties (property)
