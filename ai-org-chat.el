@@ -3,7 +3,7 @@
 ;; Copyright (C) 2023  Paul D. Nelson
 
 ;; Author: Paul D. Nelson <nelson.paul.david@gmail.com>
-;; Version: 0.1
+;; Version: 0.2
 ;; URL: https://github.com/ultronozm/ai-org-chat.el
 ;; Package-Requires: ((emacs "29.1") (llm "0.17.0") (ace-window "0.10.0") (transient "0.4.0"))
 ;; Keywords: convenience, ai, chat
@@ -1613,7 +1613,6 @@ user and assistant."
             "\n\n"))))
     (kill-new formatted-string)
     (message "Conversation copied to clipboard")))
-
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here
