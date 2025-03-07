@@ -853,7 +853,7 @@ Create org buffer with timestamped filename and set it up for AI chat."
          (path (expand-file-name file dir)))
     (unless (file-directory-p dir)
       (make-directory dir t))
-    (find-file path)
+    (pop-to-buffer (find-file-noselect path))
     (ai-org-chat-setup-buffer)))
 
 (defun ai-org-chat--make-source-buffer (beg end)
