@@ -10,7 +10,7 @@ This package supports a threaded AI chat inside any org-mode buffer.  Here's wha
 
 The design was inspired by the ChatGPT web interface.  I've been using this package as an experiment in ways to tighten the editing loop with AI in Emacs, via context, diffs, etc.
 
-The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the OpenAI library to generate a response.
+The package comes with one main function, =ai-org-chat-respond=, that operates in any org-mode buffer.  It extracts a conversation history from the parent entries, treating an entry as belonging to the AI if its heading is "AI" and otherwise to the user.  This conversation history is passed along to the LLM provider to generate a response.
 
 [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Narrowing.html][Narrowing]] provides a simple way to truncate the conversation history if it becomes too long -- only the restricted part of the buffer is considered.
 
@@ -29,24 +29,24 @@ Download this repository, install using =M-x package-install-file= (or package-v
   (:map global-map
         ("C-c /" . ai-org-chat-new))
   (:map ai-org-chat-minor-mode-map
-        ("C-c <return>" . ai-org-chat-respond)
-        ("C-c n" . ai-org-chat-branch)
-        ("C-c e" . ai-org-chat-compare))
+        ("C-c <return>" . ai-org-chat-respond))
   :custom
   (ai-org-chat-user-name "Paul")
-  (ai-org-chat-dir "~/gpt")
+  (ai-org-chat-dir "~/ai-chats")  ; Directory for saving chat files
   :config
-  ;; See below
+  ;; Uncomment to select your preferred model
   ;; (ai-org-chat-select-model "sonnet 3.7")
   )
 #+end_src
 
 To use the package, you'll need to set up the [[https://github.com/ahyatt/llm][llm]] library.  (A compatibility version using the [[https://github.com/karthink/gptel][gptel]] library is available on the 'gptel' branch if needed.)
 
-You'll need to configure the =ai-org-chat-provider= variable with a valid provider as defined by the =llm= library.  Here's how to do that:
+You'll need to select a model to use with the package. This is handled through the =ai-org-chat-select-model= command:
 
-1. Customize the =ai-org-chat-models= user option to include the models you want to use and the environment variables containing your API keys.
-2. Use the =ai-org-chat-select-model= command to choose your preferred model.  You can do this by uncommenting and adjusting the line at the bottom of the above =use-package= declaration.
+1. The package comes with several pre-configured models in the =ai-org-chat-models= variable, including Claude, GPT, Gemini, and Ollama-based local models.
+2. Run =M-x ai-org-chat-select-model= to choose your preferred model from the list.
+3. You can configure this in your init file by uncommenting and adjusting the =(ai-org-chat-select-model "model-name")= line at the bottom of the =use-package= declaration above.
+4. Custom models can be added by customizing the =ai-org-chat-models= variable.
 
 As a final tip, the following makes environment variables available in Emacs on MacOS:
 #+begin_src elisp
@@ -57,21 +57,42 @@ As a final tip, the following makes environment variables available in Emacs on 
 #+end_src
 
 * Usage
-When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if you followed the above configuration).  This visits a new file in the specified directory ("~/gpt" by default).  If the region was active, then it will be quoted in the new buffer and a reference to the source will be stored in the =SOURCE_BUFFER= property.  This maintains a live connection to the original content so the AI always has access to the most recent version.  You can add additional source buffers by setting the =SOURCE_BUFFER= property in other conversation nodes.  With a prefix argument (=C-u=), it will immediately add visible buffers as [[Context][context]] to the new chat.  Example:
+When you want to ask the AI something, do =M-x ai-org-chat-new= (or =C-c /=, if you followed the above configuration).  This creates a new file in the specified directory (controlled by the `ai-org-chat-dir` variable, which defaults to "~/ai-chats").
 
-#+attr_html: :width 800px
-#+attr_latex: :width 800px
-[[./img/animated.gif]]
+Two useful ways to start a chat:
 
-The org-mode buffer has =ai-org-chat-minor-mode= activated, whose only purpose is to support user-defined keybindings like in the above =use-package= declaration.  If you want to work in some other org file, you can either activate this minor mode manually or do =M-x ai-org-chat-setup-buffer=.
+1. *With selected text*: If the region is active when you call =ai-org-chat-new=, the selected text will be quoted in the new buffer and a reference to the source will be stored in the =SOURCE_BUFFER= property.  This maintains a live connection to the original content so the AI always has access to the most recent version.
 
-We provide the following commands:
+2. *With visible buffers as context*: With a prefix argument (=C-u ai-org-chat-new=), it will automatically add all visible buffers as [[Context][context]] to the new chat - perfect for asking questions about code you're currently looking at.
 
-- =ai-org-chat-respond= (=C-c <return>=) :: This is the main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.  When activated with a prefix arguent (=C-u C-c <return>=), this commands activates a transient menu interface (available directly via =M-x ai-org-chat-menu=) for accessing all the other commands.
-- =ai-org-chat-branch= (=C-c n=) :: Create a new conversation branch at point.
-- =ai-org-chat-compare= (=C-c e=) :: Launch an Ediff session to compare the org-mode block at point with the contents of another visible buffer.  This helps you review and apply AI-suggested changes to your codebase.  See [[Compare Feature]] for more details.
-- =ai-org-chat-convert-markdown-blocks-to-org= :: LLM's often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks between (point) and (point-max) to org-mode code blocks.
+You can add additional source buffers or context at any time through the transient menu (see below).
+
+# #+attr_html: :width 800px
+# #+attr_latex: :width 800px
+# [[./img/animated.gif]]
+
+The org-mode buffer has =ai-org-chat-minor-mode= activated, which supports user-defined keybindings like in the above =use-package= declaration.  If you want to work in some other org file, you can either activate this minor mode manually or do =M-x ai-org-chat-setup-buffer=.
+
+*** Transient Menu Interface
+
+The primary way to access all package functions is through the transient menu, activated by supplying a =C-u= prefix argument to =M-x ai-org-chat-respond= (with the above bindings, =C-u C-c <return>=).  The menu provides easy access to all package features, organized into sections:
+- Model selection
+- Context management
+- Source buffer management
+- Tools configuration
+- Formatting operations
+- Conversation operations
+
+*** Core Commands
+
+The following commands are all accessible through the transient menu:
+
+- =ai-org-chat-respond= :: The main function, which tells the AI to generate a new response to the conversation node at point.  It works in /any/ org-mode buffer, not just ones created via =ai-org-chat-new=.  Bound to =C-c <return>= by default.
+- =ai-org-chat-branch= :: Create a new conversation branch at point.
+- =ai-org-chat-compare= :: Launch an Ediff session to compare the org-mode block at point with the contents of another visible buffer.  This helps you review and apply AI-suggested changes to your codebase.  See [[Compare Feature]] for more details.
+- =ai-org-chat-convert-markdown-blocks-to-org= :: LLMs often return code in markdown format (even when you instruct them otherwise).  This function converts all markdown code blocks between (point) and (point-max) to org-mode code blocks.
 - =ai-org-chat-replace-backticks-with-equal-signs= :: Interactively replace backtick quotes with =org-mode= verbatim quotes.
+- =ai-org-chat-copy-conversation-to-clipboard= :: Copy the current conversation in a format suitable for sharing or submitting to another AI system.
 
 * Context, Tools, and Source Buffers
 
@@ -151,34 +172,35 @@ These commands are designed to simplify context/tool management, but are not req
 
 * Compare Feature
 
-The "compare" feature streamlines the process of reviewing and applying code changes suggested by the AI, as follows.
+The "compare" feature streamlines the process of reviewing and applying code changes suggested by the AI.  This is one of the most powerful features of the package, making it easy to iterate on code modifications.
 
-1. Narrow the buffer containing your original code to the function or section of interest.
-2. In the AI chat buffer, place your cursor on the AI-suggested code block.
-3. Execute the command =ai-org-chat-compare= (bound to =C-c e= by default).
-4. If you have multiple visible windows, you'll be prompted to select the window containing the original code using ace-window.
-5. An Ediff session will launch in a new tab, comparing the AI-suggested code with your original code.
+** Recommended Simple Workflow
 
-The Ediff session is launched in a new tab and cleaned up automatically when you're done, keeping your workspace tidy.
+The simplest workflow leverages the automatic =SOURCE_BUFFER= connections:
 
-** Workflow for revising part of a buffer
-There are many ways to do this.  Here's one typical workflow:
-1. Select the region that you want to modify.
-2. =C-x t 2= (=tab-bar-new-tab=) to create a new tab, then =C-c /= (or =M-x ai-org-chat-new=) to launch a chat session with the selected region.  The region's content will be quoted in the new buffer and a live connection to the source will be maintained via the =SOURCE_BUFFER= property.
-3. Ask the LLM to revise it, requesting the response in a source block (a good system message, or the function =ai-org-chat-convert-markdown-blocks-to-org=, maybe come in handy here).
-4. When you receive a response in a source block, use =C-c e= (=ai-org-chat-compare=) to inspect what was changed, and standard Ediff commands to apply parts of that change.  The comparison will automatically use the source buffer referenced in the =SOURCE_BUFFER= property.
-5. Iterate until you're happy with the changes.
+1. *Select code to modify*: Select the region you want the AI to modify.
+2. *Create chat with selection*: Run =ai-org-chat-new= (=C-c /=) with the region selected.  This automatically creates a live connection to the source via the =SOURCE_BUFFER= property.
+3. *Request modifications*: Ask the AI to revise the code.  For me, this typically involves several rounds of back-and-forth, additional context, (...).
+4. *Convert if needed*: If the AI responds with markdown code blocks rather than org-mode source blocks, use =ai-org-chat-convert-markdown-blocks-to-org= from the transient menu.
+5. *Compare and apply*: With cursor on the source block, use =ai-org-chat-compare= from the transient menu to launch an Ediff session comparing the AI's version with your original.
+6. *Select changes*: Use standard Ediff commands to apply changes (=C-u b= in Emacs 31+).
 
-An alternative workflow that doesn't rely on the =SOURCE_BUFFER= property:
-1. Create a buffer containing the region that you want to modify, either immediately via =C-x n n= (=narrow-to-region=) or after first doing =M-x clone-indirect-buffer= (which I bind to =C-x c=).
-2. =C-x t 2= (=tab-bar-new-tab=) to create a new tab containing just the buffer containing the region of interest, then =C-u C-c /= (or =C-u M-x ai-org-chat-new=) to launch a chat session with the buffer of interest as context.
-3. Follow steps 3-5 as above.
+** Alternative Workflows
 
-The point here is that this is a very flexible workflow that leverages built-in features such as narrowing and Ediff.
+When no =SOURCE_BUFFER= is available, the compare feature uses the following prioritized rules to find a buffer to compare against:
 
-** Shortcut for individual functions
+1. *Smart function matching*: If the AI-generated code is a complete function, the package will automatically find the matching function in any visible or context buffer.
 
-As a shortcut, the first step (narrowing the buffer) is not necessary if the code block consists of a single function -- in that case, narrowing should be taken care of automatically provided that the relevant buffer is either visible or appears in the context.
+2. *Visible buffers*: If there are visible buffers in other windows, you'll be prompted to select one (using ace-window if there are multiple).
+
+3. *Context buffers*: If there are buffers specified in the =CONTEXT= property, they'll be available as comparison candidates.
+
+This flexibility means you can combine the comparison feature with other Emacs techniques like narrowing or indirect buffers.  For example:
+
+- Narrow a buffer to a region of interest (=C-x n n=), make it visible, then use compare
+- Set up multiple visible windows with related code files, then choose which to compare against
+- Add important files as =CONTEXT= to always have them available for comparison
+- Split source blocks returned by the LLM into individual defuns (using =M-x org-babel-demarcate-block= or  =C-c C-v d=) and compare each individually.
 
 * Case Studies
 
@@ -188,7 +210,7 @@ A common workflow is to create a file =ai.org= in a project's src directory, run
 
 ** AI Planner
 
-Here's an example of using functions as context to create an AI chat interface to your agenda.  This setup gives the AI access to the current time, your diary, weekly agenda, and yearly project timeline.  The setup assumes you use the diary, org-mode and the agenda for task management, with long-term travel-related items stored in a file called projects.org.  It should be easy to adapt this setup to other ways of managing your schedule.
+Here's an example of using functions as context to create an AI chat interface to your agenda.  This setup gives the AI access to the current time, your diary, weekly agenda, and yearly project timeline.  The setup assumes you use the diary, org-mode and the agenda for task management, together with a "projects.org" for managing long term commitments.  It should be easy to adapt this setup to other ways of managing your schedule.
 
 1. Create an org file, say =planner.org=
 2. Run =M-x ai-org-chat-setup-buffer=

@@ -94,7 +94,7 @@ are folded automatically when inserted."
   :group 'ai-org-chat
   :type 'boolean)
 
-(defcustom ai-org-chat-dir "~/gpt"
+(defcustom ai-org-chat-dir "~/ai-chats"
   "Directory for storing files created by `ai-org-chat-new'."
   :type 'string)
 
