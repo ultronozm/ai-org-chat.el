@@ -1195,6 +1195,7 @@ matching definition or prompts for a buffer to compare with."
       (user-error "Point must be in a source block or example block"))
 
     (let* ((org-src-window-setup 'current-window)
+           (aux-bufs (ai-org-chat--get-context-buffers))
            (source-buffer-names (ai-org-chat--property-values "SOURCE_BUFFER"))
            (source-buf (seq-find (lambda (name)
                                    (when-let* ((buf (get-buffer name)))
@@ -1211,8 +1212,7 @@ matching definition or prompts for a buffer to compare with."
                   (ai-org-chat--setup-ediff (get-buffer source-buf) edited-buf)
 
                 ;; Otherwise, we need to find something to compare with
-                (let* ((aux-bufs (ai-org-chat--get-context-buffers))
-                       (visible-buffers (seq-remove
+                (let* ((visible-buffers (seq-remove
                                          (lambda (buf) (eq buf edited-buf))
                                          (seq-uniq (mapcar #'window-buffer (window-list)))))
                        (all-candidate-buffers (seq-uniq (append visible-buffers aux-bufs)))
