@@ -667,8 +667,13 @@ This wraps the original tool function to:
        :args (llm-tool-args tool)
        :async (llm-tool-async tool)))))
 
-(defvar ai-org-chat-max-recursion-depth 10
-  "Maximum number of recursive calls allowed in ai-org-chat queries.")
+(defcustom ai-org-chat-max-recursion-depth 20
+  "Maximum number of recursive calls allowed in ai-org-chat queries.
+This limits the depth of recursive tool calls to prevent infinite loops.
+Higher values allow more complex tool interactions but may increase
+processing time and resource usage."
+  :type 'integer
+  :group 'ai-org-chat)
 
 ;;; Convenience functions for populating CONTEXT and TOOLS
 
