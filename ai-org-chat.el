@@ -677,20 +677,22 @@ processing time and resource usage."
 
 ;;; Convenience functions for populating CONTEXT and TOOLS
 
-(defun ai-org-chat--add-to-property (property items &optional friendly-name)
+(defun ai-org-chat--add-to-property (property items &optional silent)
   "Helper function to add ITEMS to the PROPERTY of the current org node.
 ITEMS is a list of strings to add to the property.
-FRIENDLY-NAME is a human-readable name for the property; defaults to PROPERTY."
+When SILENT is non-nil, suppress the default message."
   (let* ((current-values (org-entry-get-multivalued-property (point) property))
          (new-values (delete-dups (append current-values items)))
-         (name (or friendly-name property)))
+         (added-count (length items)))
     (apply #'org-entry-put-multivalued-property (point) property new-values)
-    (message "Added %d item(s) to %s" (length items) name)))
+    (unless silent
+      (message "Added %d item(s) to %s" added-count property))))
 
-(defun ai-org-chat--add-context (items)
+(defun ai-org-chat--add-context (items &optional silent)
   "Helper function to add context to the current org node.
-ITEMS is a list of strings to add to the context."
-  (ai-org-chat--add-to-property "CONTEXT" items "context"))
+ITEMS is a list of strings to add to the context.
+When SILENT is non-nil, suppress the default message."
+  (ai-org-chat--add-to-property "CONTEXT" items silent))
 
 ;;;###autoload
 (defun ai-org-chat-add-buffer-context ()
@@ -718,9 +720,7 @@ ITEMS is a list of strings to add to the context."
 Excludes current buffer."
   (interactive)
   (let ((buffer-names (ai-org-chat--get-other-window-buffer-names)))
-    (ai-org-chat--add-context buffer-names)
-    (message "Added %d visible buffer(s) to context"
-             (length buffer-names))))
+    (ai-org-chat--add-context buffer-names)))
 
 (defun ai-org-chat-add-file-context ()
   "Add selected files as context for current org node."
@@ -777,7 +777,7 @@ With prefix arg RECURSIVE, include subdirectories recursively."
           (mapcar (lambda (file)
                     (file-relative-name file default-directory))
                   files)))
-    (ai-org-chat--add-context relative-files)
+    (ai-org-chat--add-context relative-files t)
     (message "Added %d files from directory %s as context (wildcard: %s)"
              (length relative-files)
              dir
@@ -821,7 +821,7 @@ to filter the files (e.g., \"*.py\" for Python files)."
                relative-files))
              (final-files
               (ai-org-chat--filter-files-by-wildcard filtered-files wildcard)))
-        (ai-org-chat--add-context final-files)
+        (ai-org-chat--add-context final-files t)
         (message "Added %d files from project %s as context (wildcard: %s)"
                  (length final-files)
                  (project-root project)
