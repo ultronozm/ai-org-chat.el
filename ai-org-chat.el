@@ -846,6 +846,19 @@ for buffers."
     (when selected-buffers
       (ai-org-chat--add-to-property "SOURCE_BUFFER" selected-buffers "source buffer"))))
 
+(defun ai-org-chat-clear-ancestor-source-buffers ()
+  "Clear SOURCE_BUFFER properties from direct ancestor nodes.
+This removes all SOURCE_BUFFER entries from parent, grandparent, etc. nodes
+of the current heading, but does not affect the current node's properties."
+  (interactive)
+  (save-excursion
+    (let ((count 0))
+      (while (org-up-heading-safe)
+        (when (org-entry-get (point) "SOURCE_BUFFER")
+          (org-entry-delete (point) "SOURCE_BUFFER")
+          (cl-incf count)))
+      (message "Cleared SOURCE_BUFFER from %d ancestor node(s)" count))))
+
 ;;; Setting up new chats
 
 ;;;###autoload
@@ -1436,7 +1449,9 @@ MODEL is a string key from `ai-org-chat-models'."
                :help "Add files from a project"])
         (list "Source Buffer"
               ["Add Source Buffer" ai-org-chat-add-source-buffer
-               :help "Add a buffer as source for the current node"])
+               :help "Add a buffer as source for the current node"]
+              ["Clear Ancestor Source Buffers" ai-org-chat-clear-ancestor-source-buffers
+               :help "Clear SOURCE_BUFFER properties from all ancestor nodes"])
         (list "Tools"
               ["Add Tools" ai-org-chat-add-tools
                :help "Add tool functions to the current node"])
@@ -1486,7 +1501,8 @@ MODEL is a string key from `ai-org-chat-models'."
     ("d" "Add directory files" ai-org-chat-add-directory-files-context)
     ("p" "Add project files" ai-org-chat-add-project-files-context)]
    ["Source"
-    ("s" "Add source buffer" ai-org-chat-add-source-buffer)]
+    ("s" "Add source buffer" ai-org-chat-add-source-buffer)
+    ("S" "Clear ancestor source buffers" ai-org-chat-clear-ancestor-source-buffers)]
    ["Tools"
     ("t" "Add tools" ai-org-chat-add-tools)]
    ["Format"
