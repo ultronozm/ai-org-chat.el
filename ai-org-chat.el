@@ -703,17 +703,21 @@ ITEMS is a list of strings to add to the context."
     (ai-org-chat--add-context selected-buffers)))
 
 ;;;###autoload
+(defun ai-org-chat--get-other-window-buffer-names ()
+  "Get buffer names from all windows except the current one."
+  (let* ((current-buf (current-buffer))
+         (other-windows (seq-remove
+                         (lambda (window)
+                           (eq (window-buffer window) current-buf))
+                         (window-list)))
+         (other-buffers (mapcar #'window-buffer other-windows)))
+    (mapcar #'buffer-name other-buffers)))
+
 (defun ai-org-chat-add-visible-buffers-context ()
   "Add all visible buffers as context for current org node.
 Excludes current buffer."
   (interactive)
-  (let* ((visible-windows (seq-remove
-                           (lambda (window)
-                             (eq (window-buffer window) (current-buffer)))
-                           (window-list)))
-         (visible-buffers (delete-dups
-                           (mapcar #'window-buffer visible-windows)))
-         (buffer-names (mapcar #'buffer-name visible-buffers)))
+  (let ((buffer-names (ai-org-chat--get-other-window-buffer-names)))
     (ai-org-chat--add-context buffer-names)
     (message "Added %d visible buffer(s) to context"
              (length buffer-names))))
