@@ -508,22 +508,30 @@ If the LLM provider doesn't support streaming, then this will
 have no effect."
   :type 'boolean)
 
-(defun ai-org-chat--process-response-text (text start-pos)
-  "Process TEXT to be inserted at START-POS, escaping org headings.
-Adds commas before asterisks that could be interpreted as org headings:
-- at START-POS if it's at the beginning of a line
-- after any newlines within TEXT."
+(defun ai-org-chat--escape-asterisks (text escape-first)
+  "Core function to escape asterisks in TEXT.
+When ESCAPE-FIRST is non-nil, escape asterisk at beginning of TEXT."
   (let ((processed-text
-         (if (with-current-buffer (marker-buffer start-pos)
-               (save-excursion
-                 (goto-char start-pos)
-                 (bolp)))
+         (if escape-first
              (if (and (> (length text) 0)
                       (= (aref text 0) ?*))
                  (concat "," text)
                text)
            text)))
     (replace-regexp-in-string "\n\\*" "\n,*" processed-text)))
+
+(defun ai-org-chat--process-response-text (text start-pos)
+  "Process TEXT to be inserted at START-POS, escaping org headings."
+  (ai-org-chat--escape-asterisks
+   text
+   (with-current-buffer (marker-buffer start-pos)
+     (save-excursion
+       (goto-char start-pos)
+       (bolp)))))
+
+(defun ai-org-chat--escape-org-mode-syntax (text)
+  "Escape `org-mode' syntax in TEXT."
+  (ai-org-chat--escape-asterisks text t))
 
 (defun ai-org-chat--insert-text (start end response)
   "Insert RESPONSE at START, updating END marker."
@@ -619,17 +627,21 @@ and RESULT is the result returned by the tool.
 Inserts the tool call and result as property drawers.
 When `ai-org-chat-fold-tool-drawers' is non-nil, drawers are folded."
   (unless (bolp) (insert "\n"))
-  (let ((tool-call-start (point)))
+  (let ((tool-call-start (point))
+        (json-escaped (ai-org-chat--escape-org-mode-syntax
+                       (json-encode
+                        `((name . ,(llm-tool-name tool))
+                          (arguments . ,(if (llm-tool-async tool)
+                                            (cdr args)
+                                          args)))))))
     (insert ":TOOL_CALL:\n"
-            (json-encode
-             `((name . ,(llm-tool-name tool))
-               (arguments . ,(if (llm-tool-async tool)
-                                 (cdr args)
-                               args))))
+            json-escaped
             "\n:END:\n")
-    (let ((tool-result-start (point)))
+    (let ((tool-result-start (point))
+          (escaped-result (ai-org-chat--escape-org-mode-syntax
+                           (format "%s" result))))
       (insert ":TOOL_RESULT:\n"
-              (format "%s" result)
+              escaped-result
               "\n:END:\n")
       (unless (looking-at "\n")
         (insert "\n"))
