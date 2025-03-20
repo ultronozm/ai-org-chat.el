@@ -902,8 +902,8 @@ The new buffer is created with a timestamped filename in
 `ai-org-chat-dir', and set up with `org-mode' and
 `ai-org-chat-minor-mode' enabled.
 
-With prefix argument ARG, immediately call
-`ai-org-chat-add-visible-buffers-context' on the new file."
+With prefix argument ARG, immediately add visible buffers and the
+original buffer to the context."
   (interactive "P")
   (let ((original-buffer (current-buffer)))
     (if (region-active-p)
@@ -938,8 +938,10 @@ With prefix argument ARG, immediately call
     (when arg
       (save-excursion
         (goto-char (point-min))
-        (ai-org-chat-add-visible-buffers-context)
-        (ai-org-chat--add-context (list (buffer-name original-buffer)))))))
+        (let* ((other-buffer-names (ai-org-chat--get-other-window-buffer-names))
+               (orig-buf-name (buffer-name original-buffer))
+               (all-buffers (cons orig-buf-name other-buffer-names)))
+          (ai-org-chat--add-context all-buffers))))))
 
 ;;; Convenience function for creating a new branch
 
