@@ -550,6 +550,13 @@ Adds commas before asterisks that could be interpreted as org headings:
   "AI name to insert into buffer."
   :type 'string)
 
+(defcustom ai-org-chat-response-finished-functions nil
+  "List of functions called after AI response has completed.
+Each function is called in the buffer containing the response with two
+arguments, the start and end positions of the response."
+  :type '(repeat function)
+  :group 'ai-org-chat)
+
 (defun ai-org-chat--handle-final-response (prompt response start end remaining-depth provider)
   "Handle the final RESPONSE from the LLM.
 PROMPT is the original prompt used for the query.
@@ -558,7 +565,12 @@ REMAINING-DEPTH determines how many more recursive calls are allowed.
 PROVIDER is the LLM service provider."
   (cond
    ((stringp response)
-    (ai-org-chat--insert-text start end response))
+    (ai-org-chat--insert-text start end response)
+    (when ai-org-chat-response-finished-functions
+      (with-current-buffer (marker-buffer start)
+        (run-hook-with-args 'ai-org-chat-response-finished-functions
+                            (marker-position start)
+                            (marker-position end)))))
 
    ;; Tool call response - continue conversation after handling tool calls
    ((and (listp response) (> remaining-depth 0))
@@ -1024,6 +1036,75 @@ widening if necessary, then creates a new top-level chat branch."
   "Replace markdown backtick quotes with `org-mode' verbatim quotes."
   (interactive)
   (query-replace-regexp "`\\([^`]+\\)`" "=\\1="))
+
+(defun ai-org-chat-replace-backticks-non-interactive (beg end)
+  "Replace markdown quotes with `org-mode' quotes between BEG to END.
+Avoids replacing backticks within `org' source blocks, example blocks, and
+property drawers."
+  (save-excursion
+    (save-restriction
+      (narrow-to-region beg end)
+      (let ((protected-regions '())
+            (case-fold-search t))
+        (goto-char (point-min))
+        (let ((protected-regions '()))
+          (dolist (pattern '(;; Source and example blocks
+                             ("^[ \t]*#\\+begin_\\(src\\|example\\)"
+                              . "^[ \t]*#\\+end_\\(src\\|example\\)")
+                             ;; Markdown code blocks
+                             ("^[ \t]*```" . "^[ \t]*```")
+                             ;; Property drawers
+                             ("^[ \t]*:\\([A-Za-z0-9_]+\\):[ \t]*$"
+                              . "^[ \t]*:END:[ \t]*$")))
+            (let ((start-regexp (car pattern))
+                  (end-regexp (cdr pattern)))
+              (goto-char (point-min))
+              (while (re-search-forward start-regexp nil t)
+                (let ((block-start (match-beginning 0)))
+                  (when (re-search-forward end-regexp nil t)
+                    (push (cons block-start (match-end 0)) protected-regions)))))))
+        (setq protected-regions (sort protected-regions (lambda (a b) (< (car a) (car b)))))
+        (let ((unprotected-regions '())
+              (last-end (point-min)))
+          (dolist (region protected-regions)
+            (when (< last-end (car region))
+              (push (cons last-end (car region)) unprotected-regions))
+            (setq last-end (cdr region)))
+          (when (< last-end (point-max))
+            (push (cons last-end (point-max)) unprotected-regions))
+          (dolist (region (nreverse unprotected-regions))
+            (goto-char (car region))
+            (while (re-search-forward "`\\([^`\n\r]+?\\)`" (cdr region) t)
+              (replace-match "=\\1=" t nil))))))))
+
+(defun ai-org-chat-auto-format-response (start end)
+  "Automatically format the AI response between START and END.
+Converts markdown code blocks to `org' format and replaces backticks
+with `org-mode' verbatim markers, avoiding source blocks and property
+drawers."
+  (save-restriction
+    (undo-boundary)
+    (narrow-to-region start end)
+    (goto-char (point-min))
+    (ai-org-chat-convert-markdown-blocks-to-org)
+    (ai-org-chat-replace-backticks-non-interactive (point-min) (point-max))
+    (undo-boundary)))
+
+;;;###autoload
+(defun ai-org-chat-add-auto-formatting ()
+  "Add automated formatting hooks to responses.
+This adds a function to `ai-org-chat-response-finished-functions' that
+automatically formats AI responses to proper `org-mode' syntax."
+  (interactive)
+  (add-hook 'ai-org-chat-response-finished-functions
+            #'ai-org-chat-auto-format-response
+            t))
+
+;;;###autoload
+(defun ai-org-chat-reset-auto-formatting ()
+  "Remove automated formatting hooks from responses."
+  (interactive)
+  (setq ai-org-chat-response-finished-functions nil))
 
 ;;; Comparison
 
@@ -1513,7 +1594,9 @@ MODEL is a string key from `ai-org-chat-models'."
     ("t" "Add tools" ai-org-chat-add-tools)]
    ["Format"
     ("m" "Convert markdown blocks" ai-org-chat--transient-convert-markdown)
-    ("q" "Replace backticks" ai-org-chat-replace-backticks-with-equal-signs)]
+    ("q" "Replace backticks" ai-org-chat-replace-backticks-with-equal-signs)
+    ("a" "Enable auto-formatting" ai-org-chat-add-auto-formatting)
+    ("r" "Reset auto-formatting" ai-org-chat-reset-auto-formatting)]
    ["Operations"
     ("B" "New branch" ai-org-chat-branch)
     ("T" "New top-level branch" ai-org-chat-branch-top-level)
