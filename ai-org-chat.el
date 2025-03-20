@@ -1004,7 +1004,7 @@ widening if necessary, then creates a new top-level chat branch."
   (interactive)
   (save-excursion
     (while (re-search-forward
-            "^\\([ \t]*\\)```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)\\1```" nil t)
+            "^\\([ \t]*\\)```\\([^[:space:]]+\\)?\\(\n\\|\r\\)\\(\\(?:.\\|\n\\)*?\\)\\(\n\\|\r\\)\\1```" nil t)
       (let ((indent (match-string 1))
             (lang (match-string 2))
             (code (match-string 4)))
