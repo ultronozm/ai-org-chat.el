@@ -1050,32 +1050,33 @@ widening if necessary, then creates a new top-level chat branch."
   (query-replace-regexp "`\\([^`]+\\)`" "=\\1="))
 
 (defun ai-org-chat-replace-backticks-non-interactive (beg end)
-  "Replace markdown quotes with `org-mode' quotes between BEG to END.
-Avoids replacing backticks within `org' source blocks, example blocks, and
-property drawers."
+  "Replace markdown quotes with `org-mode' quotes between BEG and END.
+Skips source blocks, example blocks, and property drawers."
   (save-excursion
     (save-restriction
       (narrow-to-region beg end)
       (let ((protected-regions '())
             (case-fold-search t))
         (goto-char (point-min))
-        (let ((protected-regions '()))
-          (dolist (pattern '(;; Source and example blocks
-                             ("^[ \t]*#\\+begin_\\(src\\|example\\)"
-                              . "^[ \t]*#\\+end_\\(src\\|example\\)")
-                             ;; Markdown code blocks
-                             ("^[ \t]*```" . "^[ \t]*```")
-                             ;; Property drawers
-                             ("^[ \t]*:\\([A-Za-z0-9_]+\\):[ \t]*$"
-                              . "^[ \t]*:END:[ \t]*$")))
-            (let ((start-regexp (car pattern))
-                  (end-regexp (cdr pattern)))
-              (goto-char (point-min))
-              (while (re-search-forward start-regexp nil t)
-                (let ((block-start (match-beginning 0)))
-                  (when (re-search-forward end-regexp nil t)
-                    (push (cons block-start (match-end 0)) protected-regions)))))))
-        (setq protected-regions (sort protected-regions (lambda (a b) (< (car a) (car b)))))
+        (dolist (pattern '(;; Source and example blocks
+                           ("^[ \t]*#\\+begin_\\(src\\|example\\)"
+                            . "^[ \t]*#\\+end_\\(src\\|example\\)")
+                           ;; Markdown code fences
+                           ("^[ \t]*```" . "^[ \t]*```")
+                           ;; Property drawers
+                           ("^[ \t]*:\\([A-Za-z0-9_]+\\):[ \t]*$"
+                            . "^[ \t]*:END:[ \t]*$")))
+          (let ((start-regexp (car pattern))
+                (end-regexp   (cdr pattern)))
+            (goto-char (point-min))
+            (while (re-search-forward start-regexp nil t)
+              (let ((block-start (match-beginning 0)))
+                (when (re-search-forward end-regexp nil t)
+                  (push (cons block-start (match-end 0))
+                        protected-regions))))))
+        (setq protected-regions
+              (sort protected-regions
+                    (lambda (a b) (< (car a) (car b)))))
         (let ((unprotected-regions '())
               (last-end (point-min)))
           (dolist (region protected-regions)
