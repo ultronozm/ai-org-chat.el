@@ -1055,6 +1055,31 @@ counts as opening and only the last counts as closing."
             "`" (group (or eol (not (any "`"))))))
    "\\1=\\2=\\3"))
 
+(defun ai-org-chat--replace-backticks-internal (beg end)
+  "Replace a single markdown backtick span between BEG and END.
+The closing backtick is defined as the first backtick not immediately
+followed by another."
+  (goto-char beg)
+  (while (re-search-forward (rx (seq (group (or (not (any "`"))
+                                                bol))
+                                     (group "`")))
+                            end t)
+    (let ((open (match-beginning 2)))
+      (goto-char (match-end 2))
+      (let ((content-start (point))
+            (bound (min end (line-end-position)))
+            closing found)
+        (while (and (not found)
+                    (< (point) bound)
+                    (search-forward "`" bound t))
+          (unless (eq (char-after (point)) ?`)
+            (setq closing (1- (point)))
+            (setq found t)))
+        (when found
+          (let ((content (buffer-substring-no-properties content-start closing)))
+            (goto-char open)
+            (delete-region open (1+ closing))
+            (insert (concat "=" content "="))))))))
 
 (defun ai-org-chat-replace-backticks-non-interactive (beg end)
   "Replace markdown quotes with `org-mode' quotes between BEG and END.
@@ -1092,10 +1117,11 @@ Skips source blocks, example blocks, and property drawers."
             (setq last-end (cdr region)))
           (when (< last-end (point-max))
             (push (cons last-end (point-max)) unprotected-regions))
-          (dolist (region (nreverse unprotected-regions))
-            (goto-char (car region))
-            (while (re-search-forward "`\\([^`\n\r]+?\\)`" (cdr region) t)
-              (replace-match "=\\1=" t nil))))))))
+          (setq unprotected-regions (nreverse unprotected-regions))
+          (dolist (region unprotected-regions)
+            (ai-org-chat--replace-backticks-internal
+             (car region) (cdr region))))))))
+
 
 (defun ai-org-chat-auto-format-response (start end)
   "Automatically format the AI response between START and END.
