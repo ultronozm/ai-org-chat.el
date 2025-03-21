@@ -522,12 +522,12 @@ When ESCAPE-FIRST is non-nil, escape asterisk at beginning of TEXT."
 
 (defun ai-org-chat--process-response-text (text start-pos)
   "Process TEXT to be inserted at START-POS, escaping org headings."
-  (ai-org-chat--escape-asterisks
-   text
-   (with-current-buffer (marker-buffer start-pos)
-     (save-excursion
-       (goto-char start-pos)
-       (bolp)))))
+  (let ((escape-first
+         (with-current-buffer (marker-buffer start-pos)
+           (save-excursion
+             (goto-char start-pos)
+             (bolp)))))
+    (ai-org-chat--escape-asterisks text escape-first)))
 
 (defun ai-org-chat--escape-org-mode-syntax (text)
   "Escape `org-mode' syntax in TEXT."
