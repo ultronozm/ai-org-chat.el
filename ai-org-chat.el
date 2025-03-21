@@ -576,9 +576,10 @@ PROVIDER is the LLM service provider."
     (ai-org-chat--insert-text start end response)
     (when ai-org-chat-response-finished-functions
       (with-current-buffer (marker-buffer start)
-        (run-hook-with-args 'ai-org-chat-response-finished-functions
-                            (marker-position start)
-                            (marker-position end)))))
+        (save-excursion
+          (run-hook-with-args 'ai-org-chat-response-finished-functions
+                              (marker-position start)
+                              (marker-position end))))))
 
    ;; Tool call response - continue conversation after handling tool calls
    ((and (listp response) (> remaining-depth 0))
@@ -1128,13 +1129,14 @@ Skips source blocks, example blocks, and property drawers."
 Converts markdown code blocks to `org' format and replaces backticks
 with `org-mode' verbatim markers, avoiding source blocks and property
 drawers."
-  (save-restriction
-    (undo-boundary)
-    (narrow-to-region start end)
-    (goto-char (point-min))
-    (ai-org-chat-convert-markdown-blocks-to-org)
-    (ai-org-chat-replace-backticks-non-interactive (point-min) (point-max))
-    (undo-boundary)))
+  (save-excursion
+    (save-restriction
+      (undo-boundary)
+      (narrow-to-region start end)
+      (goto-char (point-min))
+      (ai-org-chat-convert-markdown-blocks-to-org)
+      (ai-org-chat-replace-backticks-non-interactive (point-min) (point-max))
+      (undo-boundary))))
 
 ;;;###autoload
 (defun ai-org-chat-add-auto-formatting ()
