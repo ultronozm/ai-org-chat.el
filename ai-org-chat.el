@@ -1045,9 +1045,16 @@ widening if necessary, then creates a new top-level chat branch."
 
 ;;;###autoload
 (defun ai-org-chat-replace-backticks-with-equal-signs ()
-  "Replace markdown backtick quotes with `org-mode' verbatim quotes."
+  "Replace markdown backtick quotes with `org-mode' verbatim quotes.
+If consecutive backticks appear on the same line, then only the first
+counts as opening and only the last counts as closing."
   (interactive)
-  (query-replace-regexp "`\\([^`]+\\)`" "=\\1="))
+  (query-replace-regexp
+   (rx (seq (group (or bol (not (any "`"))))
+            "`" (group (one-or-more (not (any "`\n\r"))))
+            "`" (group (or eol (not (any "`"))))))
+   "\\1=\\2=\\3"))
+
 
 (defun ai-org-chat-replace-backticks-non-interactive (beg end)
   "Replace markdown quotes with `org-mode' quotes between BEG and END.
