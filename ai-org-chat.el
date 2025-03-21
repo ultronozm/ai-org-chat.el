@@ -935,8 +935,10 @@ original buffer to the context."
         (let* ((reg-beg (region-beginning))
                (reg-end (region-end))
                (region-contents
-                (ai-org-chat--ensure-trailing-newline
-                 (buffer-substring-no-properties reg-beg reg-end)))
+                (ai-org-chat--escape-asterisks
+                 (ai-org-chat--ensure-trailing-newline
+                  (buffer-substring-no-properties reg-beg reg-end))
+                 t))
                (wrapped-region-contents
                 (ai-org-chat--wrap-org
                  (list :name ""
