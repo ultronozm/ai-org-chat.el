@@ -1141,6 +1141,35 @@ drawers."
       (undo-boundary))))
 
 ;;;###autoload
+(defun ai-org-chat-format-current-response ()
+  "Auto-format the AI response at point.
+When called with point inside an AI response, this command applies
+formatting to convert markdown code blocks to org-mode syntax and
+replace backticks with org-mode verbatim markers throughout the
+entire response entry."
+  (interactive)
+  (save-excursion
+    (let ((is-in-response nil))
+      ;; First check if we're in an AI response by examining the heading
+      (save-excursion
+        (org-back-to-heading t)
+        (when (string= (org-get-heading t t t t) ai-org-chat-ai-name)
+          (setq is-in-response t)))
+      
+      (if (not is-in-response)
+          (user-error "Not in an AI response - point must be under an \"%s\" heading" 
+                      ai-org-chat-ai-name)
+        ;; Get the entry boundaries
+        (org-back-to-heading t)
+        (let* ((beg (line-beginning-position 2))
+               (end (save-excursion
+                      (outline-next-heading)
+                      (point))))
+          ;; Apply the auto-formatting to the region
+          (ai-org-chat-auto-format-response beg end)
+          (message "Formatted AI response"))))))
+
+;;;###autoload
 (defun ai-org-chat-add-auto-formatting ()
   "Add automated formatting hooks to responses.
 This adds a function to `ai-org-chat-response-finished-functions' that
@@ -1596,7 +1625,10 @@ MODEL is a string key from `ai-org-chat-models'."
               ["Convert Markdown Blocks" ai-org-chat-convert-markdown-blocks-to-org
                :help "Convert Markdown style code blocks to org"]
               ["Replace Backticks" ai-org-chat-replace-backticks-with-equal-signs
-               :help "Replace markdown backticks with org-mode verbatim quotes"])
+               :help "Replace markdown backticks with org-mode verbatim quotes"]
+              ["Format Current Response" ai-org-chat-format-current-response
+               :help "Auto-format the current AI response"])
+
         ["Copy Conversation" ai-org-chat-copy-conversation-to-clipboard
          :help "Copy the conversation as formatted XML to clipboard"]))
 
@@ -1646,7 +1678,8 @@ MODEL is a string key from `ai-org-chat-models'."
     ("m" "Convert markdown blocks" ai-org-chat--transient-convert-markdown)
     ("q" "Replace backticks" ai-org-chat-replace-backticks-with-equal-signs)
     ("a" "Enable auto-formatting" ai-org-chat-add-auto-formatting)
-    ("r" "Reset auto-formatting" ai-org-chat-reset-auto-formatting)]
+    ("r" "Reset auto-formatting" ai-org-chat-reset-auto-formatting)
+    ("f" "Format current response" ai-org-chat-format-current-response)]
    ["Operations"
     ("B" "New branch" ai-org-chat-branch)
     ("T" "New top-level branch" ai-org-chat-branch-top-level)
