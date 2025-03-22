@@ -1386,11 +1386,12 @@ matching definition or prompts for a buffer to compare with."
                                      (buffer-live-p buf)))
                                  source-buffer-names)))
 
-      (condition-case err
-          (progn
-            (tab-duplicate)
-            (org-edit-special)
-            (let ((edited-buf (current-buffer)))
+      (let ((edited-buf))
+        (condition-case err
+            (progn
+              (tab-duplicate)
+              (org-edit-special)
+              (setq edited-buf (current-buffer))
               ;; PRIORITY 1: Use source buffer from properties if available
               (if source-buf
                   (ai-org-chat--setup-ediff (get-buffer source-buf) edited-buf)
@@ -1424,11 +1425,14 @@ matching definition or prompts for a buffer to compare with."
 
                    ;; PRIORITY 4: Multiple visible buffers - use ace-window
                    ((> (length visible-buffers) 0)
-                    (let ((buf-to-compare
+                    (let ((selected-window
                            (if (= (length visible-buffers) 1)
-                               (car visible-buffers)
-                             (window-buffer (aw-select "Select window for comparison")))))
-                      (ai-org-chat--setup-ediff buf-to-compare edited-buf)))
+                               (get-buffer-window (car visible-buffers))
+                             (aw-select "Select window for comparison"))))
+                      ;; If aw-select returns nil (user aborted with C-g), signal quit
+                      (if selected-window
+                          (ai-org-chat--setup-ediff (window-buffer selected-window) edited-buf)
+                        (signal 'quit nil))))
 
                    ;; PRIORITY 5: Only aux buffers available - use completing-read
                    ((> (length all-candidate-buffers) 0)
@@ -1442,10 +1446,15 @@ matching definition or prompts for a buffer to compare with."
                    ;; No candidates at all
                    (t
                     (message "No buffer available for comparison")
-                    (tab-bar-close-tab)))))))
-        (error
-         (tab-bar-close-tab)
-         (signal (car err) (cdr err)))))))
+                    (tab-bar-close-tab))))))
+          ((quit error)
+           ;; Clean up the edited buffer if it exists
+           (when (buffer-live-p edited-buf)
+             (with-current-buffer edited-buf
+               (org-edit-src-exit))
+             (kill-buffer edited-buf))
+           (tab-bar-close-tab)
+           (signal (car err) (cdr err))))))))
 
 ;;; Model selection convenience functions
 
