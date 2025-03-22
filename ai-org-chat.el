@@ -358,6 +358,32 @@ TOOL must be a `llm-tool' struct."
                                (llm-tool-name tool)))
                     ai-org-chat-tools))))
 
+;;;###autoload
+(defun ai-org-chat-register-llm-tool-collection (&optional category)
+  "Register tools from `llm-tool-collection' for use with `ai-org-chat'.
+When CATEGORY is specified, only register tools from that category.
+Otherwise, register all available tools."
+  (interactive (list (when current-prefix-arg
+                       (completing-read "Category: "
+                                        (delete-dups
+                                         (mapcar (lambda (tool)
+                                                   (plist-get tool :category))
+                                                 (llm-tool-collection-get-all)))))))
+  (require 'llm-tool-collection)
+  (declare-function llm-tool-collection-get-all "llm-tool-collection")
+  (declare-function llm-tool-collection-get-category "llm-tool-collection")
+  (let* ((tools (if category
+                    (llm-tool-collection-get-category category)
+                  (llm-tool-collection-get-all)))
+         (count 0))
+    (dolist (tool-spec tools)
+      (ai-org-chat-register-tool
+       (apply #'llm-make-tool tool-spec))
+      (cl-incf count))
+    (message "Registered %d tools with ai-org-chat%s"
+             count
+             (if category (format " from category '%s'" category) ""))))
+
 ;;; Assembling context strings
 
 (declare-function custom-variable-type "cus-edit")
