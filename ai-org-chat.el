@@ -358,6 +358,11 @@ TOOL must be a `llm-tool' struct."
                                (llm-tool-name tool)))
                     ai-org-chat-tools))))
 
+(defun ai-org-chat-register-tool-spec (tool)
+  "Register tool SPEC, making it available for use in AI chat.
+SPEC must be a plist that can be passed to `llm-make-tool'."
+  (ai-org-chat-register-tool (apply #'llm-make-tool tool)))
+
 ;;;###autoload
 (defun ai-org-chat-register-llm-tool-collection (&optional category)
   "Register tools from `llm-tool-collection' for use with `ai-org-chat'.
