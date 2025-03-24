@@ -157,6 +157,15 @@ Alternatively, you can set the =ai-org-chat-tools= variable directly.  Once regi
 :END:
 #+end_example
 
+The [[https://github.com/skissue/llm-tool-collection][llm-tool-collection]] package is intended as a repository for sharing and developing tools.  It also provides a convenient macro =llm-tool-collection-deftool= for defining them.  After installing that package, you can register its tools for use with =ai-org-chat= via
+#+begin_src elisp
+(mapcar #'ai-org-chat-register-tool-spec (llm-tool-collection-get-all))
+#+end_src
+If you're interested in developing tools, it may be useful to have them update automatically in =ai-org-chat= as soon as their =llm-tool-collection-deftool= form is evaluated.  This can be achieved as follows:
+#+begin_src elisp
+(add-hook 'llm-tool-collection-post-define-functions #'ai-org-chat-register-tool-spec)
+#+end_src
+
 ** Helper Commands
 
 While you can directly edit PROPERTIES drawers using Org mode's built-in commands (e.g., =C-c C-x p= for =org-set-property=), =ai-org-chat= provides some helper commands for managing context and tools (which are also accessible via the transient menu mentioned above):
