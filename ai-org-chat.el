@@ -1730,12 +1730,25 @@ MODEL is a string key from `ai-org-chat-models'."
 
 (defun ai-org-chat--ensure-utf8-encoding (text)
   "Ensure TEXT is properly encoded as UTF-8.
-Returns the properly decoded string."
-  (let* ((unibyte (if (multibyte-string-p text)
-                      (encode-coding-string text 'utf-8-auto)
-                    text))
-         (decoded (decode-coding-string unibyte 'utf-8-auto)))
-    decoded))
+TEXT can be either a string or an llm-multipart object.
+Returns the input with strings properly decoded as UTF-8."
+  (cond
+   ((stringp text)
+    (let* ((unibyte (if (multibyte-string-p text)
+                        (encode-coding-string text 'utf-8-auto)
+                      text))
+           (decoded (decode-coding-string unibyte 'utf-8-auto)))
+      decoded))
+   ((and (recordp text) (eq (type-of text) 'llm-multipart))
+    (let ((processed-parts
+           (mapcar (lambda (part)
+                     (if (stringp part)
+                         (ai-org-chat--ensure-utf8-encoding part)
+                       part))
+                   (llm-multipart-parts text))))
+      (make-llm-multipart :parts processed-parts)))
+   (t (error "ai-org-chat--ensure-utf8-encoding: Expected string or llm-multipart, got %S" text))))
+
 
 ;;;###autoload
 (defun ai-org-chat-respond (&optional arg)
