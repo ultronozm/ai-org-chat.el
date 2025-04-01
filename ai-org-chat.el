@@ -1161,7 +1161,14 @@ Skips source blocks, example blocks, and property drawers."
   "Automatically format the AI response between START and END.
 Converts markdown code blocks to `org' format and replaces backticks
 with `org-mode' verbatim markers, avoiding source blocks and property
-drawers."
+drawers.
+
+When called interactively, operates on the active region. If no region
+is active, operates from point to the end of buffer."
+  (interactive
+   (if (use-region-p)
+       (list (region-beginning) (region-end))
+     (list (point) (point-max))))
   (save-excursion
     (save-restriction
       (undo-boundary)
