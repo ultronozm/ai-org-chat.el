@@ -1566,16 +1566,21 @@ matching definition or prompts for a buffer to compare with."
                                   args))
                :key-env "DEEPSEEK_KEY"
                :chat-model "deepseek-reasoner"))
-    ("gemini-1.5-pro-latest" .
+    ("gemini 2.0 flash-lite" .
      (:package llm-gemini
                :provider make-llm-gemini
                :key-env "GEMINI_KEY"
-               :chat-model "gemini-1.5-pro-latest"))
-    ("gemini-2.0-flash-exp" .
+               :chat-model "gemini-2.0-flash-lite"))
+    ("gemini 2.0 flash" .
      (:package llm-gemini
                :provider make-llm-gemini
                :key-env "GEMINI_KEY"
-               :chat-model "gemini-2.0-flash-exp"))
+               :chat-model "gemini-2.0-flash"))
+    ("gemini 2.5 pro preview" .
+     (:package llm-gemini
+               :provider make-llm-gemini
+               :key-env "GEMINI_KEY"
+               :chat-model "gemini-2.5-pro-preview-03-25"))
     ("llama 3.1" .
      (:package llm-ollama
                :provider make-llm-ollama
