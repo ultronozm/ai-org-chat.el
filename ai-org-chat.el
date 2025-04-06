@@ -692,7 +692,8 @@ behavior added.
 This wraps the original tool function to:
 1. Execute the tool with the provided arguments
 2. Insert tool call and result at the marker position
-3. Return the result so the conversation can continue"
+3. Return the result so the conversation can continue
+4. Properly handle and log any errors that occur during tool execution"
   (let* ((orig-func (llm-tool-function tool))
          (tool-result-insertion-marker (make-marker)))
     (set-marker tool-result-insertion-marker (marker-position marker))
@@ -710,11 +711,18 @@ This wraps the original tool function to:
                           (save-excursion
                             (goto-char tool-result-insertion-marker)
                             (ai-org-chat--insert-tool-result tool args result)))
-                        (when async
+                        (when async ; TODO: maybe some error-handling here?
                           (funcall (car args) r)))))
                  (if async
                      (apply orig-func wrapped-callback (cdr args))
-                   (funcall wrapped-callback (apply orig-func args)))
+                   (funcall
+                    wrapped-callback
+                    (condition-case err
+                        (apply orig-func args)
+                      (error
+                       (let ((error-message
+                              (format "Tool error: %s" (error-message-string err))))
+                         error-message)))))
                  result)))))
       (llm-make-tool
        :function wrapped-func
