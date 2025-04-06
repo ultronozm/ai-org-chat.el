@@ -1201,9 +1201,9 @@ entire response entry."
         (org-back-to-heading t)
         (when (string= (org-get-heading t t t t) ai-org-chat-ai-name)
           (setq is-in-response t)))
-      
+
       (if (not is-in-response)
-          (user-error "Not in an AI response - point must be under an \"%s\" heading" 
+          (user-error "Not in an AI response - point must be under an \"%s\" heading"
                       ai-org-chat-ai-name)
         ;; Get the entry boundaries
         (org-back-to-heading t)
@@ -1846,6 +1846,104 @@ With prefix ARG, show the transient interface instead."
         (if ai-org-chat-streaming-p
             (llm-chat-streaming ai-org-chat-provider prompt partial-cb final-cb error-cb)
           (llm-chat-async ai-org-chat-provider prompt final-cb error-cb)))))))
+
+(defun ai-org-chat--get-rewrite-system-message ()
+  "Generate a system message for rewriting text based on current major mode."
+  (concat
+   (format "You are editing a buffer in %s." major-mode)
+   "Follow the instructions and rewrite the provided text. "
+   "Generate ONLY the replacement text, without explanation or extraneous delimiters. "
+   "Do not include any commentary before or after the text. "
+   "Your response should be only the new text, replacing the original."))
+
+(defun ai-org-chat--simple-get-context-text (arg)
+  "Get context text based on prefix ARG.
+Used only by `ai-org-chat-simple-respond'."
+  (cond
+   ((equal arg '(4))  ; C-u
+    (concat "CONTEXT FROM CURRENT BUFFER:\n\n"
+            (buffer-substring-no-properties (point-min) (point-max))
+            "\n\n"))
+   ((equal arg '(16)) ; C-u C-u
+    (concat
+     "CONTEXT FROM VISIBLE BUFFERS:\n\n"
+     (mapconcat
+      (lambda (window)
+        (with-current-buffer (window-buffer window)
+          (concat "--- Buffer: " (buffer-name) " ---\n"
+                  (buffer-substring-no-properties (point-min) (point-max))
+                  "\n")))
+      (window-list)
+      "\n")
+     "\n\n"))
+   (t "")))
+
+(defun ai-org-chat-simple-respond (arg)
+  "Send text to the LLM and insert response at point.
+When region is active, prompts for rewrite instructions and replaces the
+region with the LLM's response.  Otherwise, sends text up to point and
+inserts response at point.
+
+With prefix ARG:
+
+- With single prefix \\[universal-argument], include the entire current
+  buffer as context
+
+- With double prefix \\[universal-argument] \\[universal-argument],
+  include all visible buffers as context
+
+This function works in any buffer, without requiring `ai-org-chat-minor-mode'.
+It uses the currently selected LLM model via `ai-org-chat-provider'."
+  (interactive "P")
+  (unless ai-org-chat-provider
+    (user-error "No LLM provider set - use `ai-org-chat-select-model'"))
+
+  (let ((context-text (ai-org-chat--simple-get-context-text arg)))
+    (if (use-region-p)
+        ;; Region active: rewrite.
+        (let* ((region-beg (region-beginning))
+               (region-end (region-end))
+               (region-text (buffer-substring-no-properties
+                             region-beg region-end))
+               (context-scope (cond
+                               ((equal arg '(4)) "[context: buffer] ")
+                               ((equal arg '(16)) "[context: visible buffers] ")
+                               (t "")))
+               (instruction (read-string (format "%sRewrite instruction: "
+                                                 context-scope)))
+               (system-message (ai-org-chat--get-rewrite-system-message))
+               (prompt (llm-make-chat-prompt
+                        (format "%sTEXT TO REWRITE:\n\n%s\n\nINSTRUCTION:\n%s"
+                                context-text region-text instruction)
+                        :context system-message))
+               (ends-with-newline
+                (and (> (length region-text) 0)
+                     (eq (aref region-text (1- (length region-text))) ?\n)))
+               (end-marker (make-marker)))
+          (deactivate-mark)
+          (delete-region region-beg region-end)
+          (set-marker end-marker (point))
+          (set-marker-insertion-type end-marker t) ; advance when inserting
+          (unwind-protect
+              (llm-chat-streaming-to-point
+               ai-org-chat-provider prompt (current-buffer) (point)
+               (lambda ()
+                 (save-excursion
+                   (goto-char end-marker)
+                   (when (and ends-with-newline
+                              (not (eq (char-before) ?\n)))
+                     (insert "\n")))
+                 (message "Text rewritten")))
+            (set-marker end-marker nil)))
+
+      ;; No region: respond.
+      (let* ((input-text (buffer-substring-no-properties (point-min) (point)))
+             (prompt (llm-make-chat-prompt
+                      (format "%s%s" context-text input-text)
+                      :context ai-org-chat-system-message)))
+        (llm-chat-streaming-to-point
+         ai-org-chat-provider prompt (current-buffer) (point)
+         (lambda ()))))))
 
 ;;; Minor mode
 
