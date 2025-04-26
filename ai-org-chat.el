@@ -1545,6 +1545,11 @@ matching definition or prompts for a buffer to compare with."
                :provider make-llm-openai
                :key-env "OPENAI_KEY"
                :chat-model "gpt-4o-mini"))
+    ("gpt-4.1" .
+     (:package llm-openai
+               :provider make-llm-openai
+               :key-env "OPENAI_KEY"
+               :chat-model "gpt-4.1"))
     ("opus 3" .
      (:package llm-claude
                :provider make-llm-claude
