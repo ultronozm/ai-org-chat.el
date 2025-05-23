@@ -1505,7 +1505,17 @@ matching definition or prompts for a buffer to compare with."
 ;;; Model selection convenience functions
 
 (defcustom ai-org-chat-models
-  '(("sonnet 3.7" .
+  '(("opus 4" .
+     (:package llm-claude
+               :provider make-llm-claude
+               :key-env "ANTHROPIC_KEY"
+               :chat-model "claude-opus-4-20250514")) 
+    ("sonnet 4" .
+     (:package llm-claude
+               :provider make-llm-claude
+               :key-env "ANTHROPIC_KEY"
+               :chat-model "claude-sonnet-4-20250514"))
+    ("sonnet 3.7" .
      (:package llm-claude
                :provider make-llm-claude
                :key-env "ANTHROPIC_KEY"
@@ -1615,7 +1625,7 @@ identifying the model, and PLIST is a property list with the following keys:
   :type '(alist :key-type string
                 :value-type (plist :key-type symbol :value-type sexp)))
 
-(defcustom ai-org-chat-default-model "sonnet 3.7"
+(defcustom ai-org-chat-default-model "sonnet 4"
   "The default LLM model to use for ai-org-chat.
 This should be one of the keys in `ai-org-chat-models'."
   :type 'string)
@@ -1632,6 +1642,8 @@ MODEL is a string key from `ai-org-chat-models'."
          (provider (plist-get config :provider))
          (key-env (plist-get config :key-env))
          (chat-model (plist-get config :chat-model)))
+    (unless config
+      (user-error "Model %s is not available" model))
     (if (not (require package nil t))
         (user-error "Package %s is not available" package)
       (setq ai-org-chat-provider
