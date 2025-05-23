@@ -1856,95 +1856,6 @@ With prefix ARG, show the transient interface instead."
    "Do not include any commentary before or after the text. "
    "Your response should be only the new text, replacing the original."))
 
-(defun ai-org-chat--simple-get-context-text (arg)
-  "Get context text based on prefix ARG.
-Used only by `ai-org-chat-simple-respond'."
-  (cond
-   ((equal arg '(4))  ; C-u
-    (concat "CONTEXT FROM CURRENT BUFFER:\n\n"
-            (buffer-substring-no-properties (point-min) (point-max))
-            "\n\n"))
-   ((equal arg '(16)) ; C-u C-u
-    (concat
-     "CONTEXT FROM VISIBLE BUFFERS:\n\n"
-     (mapconcat
-      (lambda (window)
-        (with-current-buffer (window-buffer window)
-          (concat "--- Buffer: " (buffer-name) " ---\n"
-                  (buffer-substring-no-properties (point-min) (point-max))
-                  "\n")))
-      (window-list)
-      "\n")
-     "\n\n"))
-   (t "")))
-
-(defun ai-org-chat-simple-respond (arg)
-  "Send text to the LLM and insert response at point.
-When region is active, prompts for rewrite instructions and replaces the
-region with the LLM's response.  Otherwise, sends text up to point and
-inserts response at point.
-
-With prefix ARG:
-
-- With single prefix \\[universal-argument], include the entire current
-  buffer as context
-
-- With double prefix \\[universal-argument] \\[universal-argument],
-  include all visible buffers as context
-
-This function works in any buffer, without requiring `ai-org-chat-minor-mode'.
-It uses the currently selected LLM model via `ai-org-chat-provider'."
-  (interactive "P")
-  (unless ai-org-chat-provider
-    (user-error "No LLM provider set - use `ai-org-chat-select-model'"))
-
-  (let ((context-text (ai-org-chat--simple-get-context-text arg)))
-    (if (use-region-p)
-        ;; Region active: rewrite.
-        (let* ((region-beg (region-beginning))
-               (region-end (region-end))
-               (region-text (buffer-substring-no-properties
-                             region-beg region-end))
-               (context-scope (cond
-                               ((equal arg '(4)) "[context: buffer] ")
-                               ((equal arg '(16)) "[context: visible buffers] ")
-                               (t "")))
-               (instruction (read-string (format "%sRewrite instruction: "
-                                                 context-scope)))
-               (system-message (ai-org-chat--get-rewrite-system-message))
-               (prompt (llm-make-chat-prompt
-                        (format "%sTEXT TO REWRITE:\n\n%s\n\nINSTRUCTION:\n%s"
-                                context-text region-text instruction)
-                        :context system-message))
-               (ends-with-newline
-                (and (> (length region-text) 0)
-                     (eq (aref region-text (1- (length region-text))) ?\n)))
-               (end-marker (make-marker)))
-          (deactivate-mark)
-          (delete-region region-beg region-end)
-          (set-marker end-marker (point))
-          (set-marker-insertion-type end-marker t) ; advance when inserting
-          (unwind-protect
-              (llm-chat-streaming-to-point
-               ai-org-chat-provider prompt (current-buffer) (point)
-               (lambda ()
-                 (save-excursion
-                   (goto-char end-marker)
-                   (when (and ends-with-newline
-                              (not (eq (char-before) ?\n)))
-                     (insert "\n")))
-                 (message "Text rewritten")))
-            (set-marker end-marker nil)))
-
-      ;; No region: respond.
-      (let* ((input-text (buffer-substring-no-properties (point-min) (point)))
-             (prompt (llm-make-chat-prompt
-                      (format "%s%s" context-text input-text)
-                      :context ai-org-chat-system-message)))
-        (llm-chat-streaming-to-point
-         ai-org-chat-provider prompt (current-buffer) (point)
-         (lambda ()))))))
-
 ;;; Minor mode
 
 (defvar ai-org-chat-minor-mode-map
@@ -1994,6 +1905,243 @@ user and assistant."
             "\n\n"))))
     (kill-new formatted-string)
     (message "Conversation copied to clipboard")))
+
+;;; Simple interface
+
+(defvar-local ai-org-chat-simple-context nil
+  "List of context sources for ai-org-chat-simple-respond.
+Each element can be a buffer name, file path, or function name.")
+
+(defvar-local ai-org-chat-simple-tools nil
+  "List of tool names available for ai-org-chat-simple-respond.")
+
+;; (put 'ai-org-chat-simple-context 'safe-local-variable 'listp)
+;; (put 'ai-org-chat-simple-tools 'safe-local-variable 'listp)
+
+(defun ai-org-chat-simple--get-context-content ()
+  "Get wrapped content from sources in `ai-org-chat-simple-context'.
+Returns a string of concatenated content or nil if none exists."
+  (when ai-org-chat-simple-context
+    (let ((contents (delq nil (mapcar #'ai-org-chat--extract-source-content
+                                      ai-org-chat-simple-context))))
+      (when contents
+        (string-join contents "\n")))))
+
+(defun ai-org-chat-simple--get-tools ()
+  "Get tool objects from names in `ai-org-chat-simple-tools'.
+Returns a list of tool objects or nil if none are specified."
+  (delq nil (mapcar #'ai-org-chat--lookup-tool ai-org-chat-simple-tools)))
+
+(defun ai-org-chat--simple-get-context-text (arg)
+  "Get context text based on prefix ARG.
+Used only by `ai-org-chat-simple-respond'."
+  (cond
+   ((equal arg '(4))  ; C-u
+    (concat "CONTEXT FROM CURRENT BUFFER:\n\n"
+            (buffer-substring-no-properties (point-min) (point-max))
+            "\n\n"))
+   ((equal arg '(16)) ; C-u C-u
+    (concat
+     "CONTEXT FROM VISIBLE BUFFERS:\n\n"
+     (mapconcat
+      (lambda (window)
+        (with-current-buffer (window-buffer window)
+          (concat "--- Buffer: " (buffer-name) " ---\n"
+                  (buffer-substring-no-properties (point-min) (point-max))
+                  "\n")))
+      (window-list)
+      "\n")
+     "\n\n"))
+   (t "")))
+
+;;;###autoload
+(defun ai-org-chat-simple-respond (arg)
+  "Send text to the LLM and insert response at point.
+When region is active, prompts for rewrite instructions and replaces the
+region with the LLM's response.  Otherwise, sends text up to point and
+inserts response at point.
+
+With prefix ARG:
+
+Single prefix \\[universal-argument]: Include the entire current buffer as context.
+
+Double prefix \\[universal-argument] \\[universal-argument]: Include all
+visible buffers as context.
+
+Uses variables `ai-org-chat-simple-context' and
+`ai-org-chat-simple-tools' to include additional context and tools in
+the prompt.  Works in any buffer, using the LLM model in
+`ai-org-chat-provider'."
+  (interactive "P")
+  (unless ai-org-chat-provider
+    (user-error "No LLM provider set - use `ai-org-chat-select-model'"))
+  (let ((context-text (ai-org-chat--simple-get-context-text arg))
+        (buffer-context (ai-org-chat-simple--get-context-content))
+        (tools (ai-org-chat-simple--get-tools)))
+    (if (use-region-p)
+        ;; Region active: rewrite.
+        (let* ((region-beg (region-beginning))
+               (region-end (region-end))
+               (region-text (buffer-substring-no-properties region-beg region-end))
+               (context-scope (cond
+                               ((equal arg '(4)) "[context: buffer] ")
+                               ((equal arg '(16)) "[context: visible buffers] ")
+                               (t "")))
+               (instruction (read-string (format "%sRewrite instruction: " context-scope)))
+               (system-message (ai-org-chat--get-rewrite-system-message))
+               (system-context (if buffer-context
+                                   (concat system-message "\n\n" buffer-context)
+                                 system-message))
+               (user-message (format "%sTEXT TO REWRITE:\n\n%s\n\nINSTRUCTION:\n%s"
+                                     context-text region-text instruction))
+               (prompt (llm-make-chat-prompt
+                        user-message
+                        :context system-context
+                        :tools tools))
+               (ends-with-newline (and (> (length region-text) 0)
+                                       (eq (aref region-text (1- (length region-text))) ?\n)))
+               (end-marker (make-marker)))
+          (deactivate-mark)
+          (delete-region region-beg region-end)
+          (set-marker end-marker (point))
+          (set-marker-insertion-type end-marker t)
+          (unwind-protect
+              (llm-chat-streaming-to-point
+               ai-org-chat-provider prompt (current-buffer) (point)
+               (lambda ()
+                 (save-excursion
+                   (goto-char end-marker)
+                   (when (and ends-with-newline
+                              (not (eq (char-before) ?\n)))
+                     (insert "\n")))
+                 (message "Text rewritten")))
+            (set-marker end-marker nil)))
+
+
+      ;; No region: respond.
+      (let* ((system-context (if buffer-context
+                                 (concat ai-org-chat-system-message "\n\n" buffer-context)
+                               ai-org-chat-system-message))
+             (input-text (buffer-substring-no-properties (point-min) (point)))
+             (user-message (if context-text
+                               (concat context-text "\n" input-text)
+                             input-text))
+             (prompt (llm-make-chat-prompt
+                      user-message
+                      :context system-context
+                      :tools tools)))
+        (llm-chat-streaming-to-point
+         ai-org-chat-provider prompt (current-buffer) (point)
+         (lambda ()))))))
+
+(require 'transient)
+
+(transient-define-prefix ai-org-chat-simple-configure ()
+  "Configure context and tools for ai-org-chat-simple-respond."
+  ["Context"
+   ("b" "Add buffer" ai-org-chat-simple--add-buffer-context)
+   ("f" "Add file" ai-org-chat-simple--add-file-context)
+   ("F" "Add function" ai-org-chat-simple--add-function-context)
+   ("r" "Remove context items" ai-org-chat-simple--remove-context)
+   ("c" "Clear context" ai-org-chat-simple--clear-context)]
+  ["Tools"
+   ("t" "Add tools" ai-org-chat-simple--add-tools)
+   ("R" "Remove tools" ai-org-chat-simple--remove-tools)
+   ("C" "Clear tools" ai-org-chat-simple--clear-tools)]
+  ["Actions"
+   ("s" "Show current config" ai-org-chat-simple-show-config)])
+
+(defun ai-org-chat-simple--add-buffer-context ()
+  "Add a buffer to the buffer-local context."
+  (interactive)
+  (let ((buffer (completing-read "Select buffer: " (mapcar #'buffer-name (buffer-list)))))
+    (push buffer ai-org-chat-simple-context)
+    (setq ai-org-chat-simple-context (delete-dups ai-org-chat-simple-context))
+    (message "Added buffer %s to context" buffer)
+    (transient-setup 'ai-org-chat-simple-configure)))
+
+(defun ai-org-chat-simple--add-file-context ()
+  "Add a file to the buffer-local context."
+  (interactive)
+  (let ((file (read-file-name "Select file: ")))
+    (push file ai-org-chat-simple-context)
+    (setq ai-org-chat-simple-context (delete-dups ai-org-chat-simple-context))
+    (message "Added file %s to context" file)
+    (transient-setup 'ai-org-chat-simple-configure)))
+
+(defun ai-org-chat-simple--add-function-context ()
+  "Add a function to the buffer-local context."
+  (interactive)
+  (let ((func (completing-read "Select function: "
+                               (let (syms)
+                                 (mapatoms (lambda (s)
+                                             (when (fboundp s)
+                                               (push (symbol-name s) syms))))
+                                 syms))))
+    (push func ai-org-chat-simple-context)
+    (setq ai-org-chat-simple-context (delete-dups ai-org-chat-simple-context))
+    (message "Added function %s to context" func)
+    (transient-setup 'ai-org-chat-simple-configure)))
+
+(defun ai-org-chat-simple--remove-context ()
+  "Remove selected context items from the buffer-local context."
+  (interactive)
+  (if (null ai-org-chat-simple-context)
+      (message "No context items to remove")
+    (let ((to-remove (completing-read-multiple "Select context items to remove: "
+                                               ai-org-chat-simple-context)))
+      (setq ai-org-chat-simple-context
+            (seq-difference ai-org-chat-simple-context to-remove))
+      (message "Removed %d item(s) from context" (length to-remove))))
+  (transient-setup 'ai-org-chat-simple-configure))
+
+(defun ai-org-chat-simple--clear-context ()
+  "Clear all context items for the buffer."
+  (interactive)
+  (setq ai-org-chat-simple-context nil)
+  (message "Cleared all context items")
+  (transient-setup 'ai-org-chat-simple-configure))
+
+(defun ai-org-chat-simple--add-tools ()
+  "Add selected tools to the buffer-local tools."
+  (interactive)
+  (let* ((tool-names (mapcar #'llm-tool-name ai-org-chat-tools))
+         (selected (completing-read-multiple "Select tools to add: " tool-names)))
+    (setq ai-org-chat-simple-tools
+          (delete-dups (append ai-org-chat-simple-tools selected)))
+    (message "Added %d tool(s)" (length selected))
+    (transient-setup 'ai-org-chat-simple-configure)))
+
+(defun ai-org-chat-simple--remove-tools ()
+  "Remove selected tools from the buffer-local tools."
+  (interactive)
+  (if (null ai-org-chat-simple-tools)
+      (message "No tools to remove")
+    (let ((to-remove (completing-read-multiple "Select tools to remove: "
+                                               ai-org-chat-simple-tools)))
+      (setq ai-org-chat-simple-tools
+            (seq-difference ai-org-chat-simple-tools to-remove))
+      (message "Removed %d tool(s)" (length to-remove))))
+  (transient-setup 'ai-org-chat-simple-configure))
+
+(defun ai-org-chat-simple--clear-tools ()
+  "Clear all tools for the buffer."
+  (interactive)
+  (setq ai-org-chat-simple-tools nil)
+  (message "Cleared all tools")
+  (transient-setup 'ai-org-chat-simple-configure))
+
+(defun ai-org-chat-simple-show-config ()
+  "Display the current context and tools configuration for the buffer."
+  (interactive)
+  (message "Context: %s\nTools: %s"
+           (if ai-org-chat-simple-context
+               (string-join ai-org-chat-simple-context ", ")
+             "none")
+           (if ai-org-chat-simple-tools
+               (string-join ai-org-chat-simple-tools ", ")
+             "none"))
+  (transient-setup 'ai-org-chat-simple-configure))
 
 (provide 'ai-org-chat)
 ;;; ai-org-chat.el ends here

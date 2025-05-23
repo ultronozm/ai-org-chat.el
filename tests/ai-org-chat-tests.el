@@ -420,7 +420,7 @@ More text"))))
         (progn
           ;; Set to known values for testing
           (setq ai-org-chat-excluded-drawers '("TOOL_CALL" "TOOL_RESULT"))
-          
+
           ;; Test standard tool drawer filtering
           (let ((text "Text before
 :TOOL_CALL:
@@ -435,7 +435,7 @@ Text after"))
                          "Text before
 Middle text
 Text after")))
-          
+
           ;; Test with only one type of drawer
           (let ((text "Text with only result
 :TOOL_RESULT:
@@ -445,7 +445,7 @@ End text"))
             (should (equal (ai-org-chat--filter-tool-drawers text)
                          "Text with only result
 End text")))
-          
+
           ;; Test with other drawers that should not be filtered
           (let ((text "Text with other drawer
 :OTHER_DRAWER:
@@ -458,7 +458,7 @@ End text"))
 Other content
 :END:
 End text")))
-          
+
           ;; Test with tool drawers in code blocks (should be preserved)
           (let ((text "Example showing a tool call:
 ```
@@ -482,7 +482,7 @@ Here's how a tool call would look:
 ```
 And here's a real tool call:
 Text after")))
-          
+
           ;; Test with mixed org blocks and tool drawers
           (let ((text "Documentation:
 #+begin_src org
@@ -507,7 +507,7 @@ This shows example syntax
 #+end_src
 Real tool call:
 End text")))
-            
+
           ;; Test another variation with nested content
           (let ((text "Documentation with triple backticks:
 ```
@@ -530,8 +530,57 @@ Example structure
 :END:
 ```
 End"))))
-      
+
       ;; Restore original value
       (setq ai-org-chat-excluded-drawers original-excluded-drawers))))
+
+(ert-deftest test-ai-org-chat--escape-org-syntax ()
+  "Test escaping of org syntax, including #+begin_src lines."
+  ;; Test escaping asterisks
+  (let ((text "* Heading\nNormal text\n* Another heading"))
+    (should (equal (ai-org-chat--escape-org-syntax text t)
+                   ",* Heading\nNormal text\n,* Another heading")))
+
+  ;; Test escaping #+begin_src
+  (let ((text "#+begin_src elisp\n(message \"Hello\")\n#+end_src"))
+    (should (equal (ai-org-chat--escape-org-syntax text t)
+                   ",#+begin_src elisp\n(message \"Hello\")\n#+end_src")))
+
+  ;; Test escaping #+begin_src with indentation
+  (let ((text "  #+begin_src python\nprint(\"Hello\")\n  #+end_src"))
+    (should (equal (ai-org-chat--escape-org-syntax text t)
+                   ",  #+begin_src python\nprint(\"Hello\")\n  #+end_src")))
+
+  ;; Test escaping a combination of both
+  (let ((text "* Heading\n#+begin_src elisp\n(message \"Hello\")\n#+end_src\n* Another heading"))
+    (should (equal (ai-org-chat--escape-org-syntax text t)
+                   ",* Heading\n,#+begin_src elisp\n(message \"Hello\")\n#+end_src\n,* Another heading")))
+
+  ;; Test with escape-first nil
+  (let ((text "* Heading\n#+begin_src elisp\n(message \"Hello\")\n#+end_src\n* Another heading"))
+    (should (equal (ai-org-chat--escape-org-syntax text nil)
+                   "* Heading\n,#+begin_src elisp\n(message \"Hello\")\n#+end_src\n,* Another heading"))))
+
+(ert-deftest test-ai-org-chat--clean-text ()
+  "Test cleaning of escaped org syntax from text."
+  ;; Test cleaning asterisks
+  (let ((text ",* Heading\nNormal text\n,* Another heading"))
+    (should (equal (ai-org-chat--clean-text text)
+                   "* Heading\nNormal text\n* Another heading")))
+
+  ;; Test cleaning #+begin_src
+  (let ((text ",#+begin_src elisp\n(message \"Hello\")\n#+end_src"))
+    (should (equal (ai-org-chat--clean-text text)
+                   "#+begin_src elisp\n(message \"Hello\")\n#+end_src")))
+
+  ;; Test cleaning #+begin_src with indentation
+  (let ((text ",  #+begin_src python\nprint(\"Hello\")\n  #+end_src"))
+    (should (equal (ai-org-chat--clean-text text)
+                   "  #+begin_src python\nprint(\"Hello\")\n  #+end_src")))
+
+  ;; Test cleaning a combination of both
+  (let ((text ",* Heading\n,#+begin_src elisp\n(message \"Hello\")\n#+end_src\n,* Another heading"))
+    (should (equal (ai-org-chat--clean-text text)
+                   "* Heading\n#+begin_src elisp\n(message \"Hello\")\n#+end_src\n* Another heading"))))
 
 (provide 'ai-org-chat-tests)
