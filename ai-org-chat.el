@@ -1615,7 +1615,11 @@ matching definition or prompts for a buffer to compare with."
     ("phi4" .
      (:package llm-ollama
                :provider make-llm-ollama
-               :chat-model "phi4")))
+               :chat-model "phi4"))
+    ("hf.co/unsloth/Qwen3-8B-GGUF:UD-Q4_K_XL" .
+     (:package llm-ollama
+               :provider make-llm-ollama
+               :chat-model "hf.co/unsloth/Qwen3-8B-GGUF:UD-Q4_K_XL")))
   "Alist of LLM models and their configurations for ai-org-chat.
 Each entry is of the form (NAME . PLIST) where NAME is a string
 identifying the model, and PLIST is a property list with the following keys:
