@@ -1007,7 +1007,8 @@ original buffer to the context."
         (let* ((other-buffer-names (ai-org-chat--get-other-window-buffer-names))
                (orig-buf-name (buffer-name original-buffer))
                (all-buffers (cons orig-buf-name other-buffer-names)))
-          (ai-org-chat--add-context all-buffers))))))
+          (ai-org-chat--add-context all-buffers))))
+    (set-buffer-modified-p nil)))
 
 ;;; Convenience function for creating a new branch
 
