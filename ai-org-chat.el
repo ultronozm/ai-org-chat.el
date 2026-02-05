@@ -1761,7 +1761,7 @@ MODEL is a string key from `ai-org-chat-models'."
     ("q" "Replace backticks" ai-org-chat-replace-backticks-with-equal-signs)
     ("a" "Enable auto-formatting" ai-org-chat-add-auto-formatting)
     ("r" "Reset auto-formatting" ai-org-chat-reset-auto-formatting)
-    ("f" "Format current response" ai-org-chat-format-current-response)]
+    ("g" "Format current response" ai-org-chat-format-current-response)]
    ["Operations"
     ("B" "New branch" ai-org-chat-branch)
     ("T" "New top-level branch" ai-org-chat-branch-top-level)
