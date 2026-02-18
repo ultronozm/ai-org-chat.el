@@ -1726,6 +1726,16 @@ MODEL is a string key from `ai-org-chat-models'."
 
 ;;; Transient interface
 
+(defun ai-org-chat--provider-chat-model (provider)
+  "Return PROVIDER chat model string, if the provider exposes one."
+  (when provider
+    (let* ((provider-type (type-of provider))
+           (accessor (and (symbolp provider-type)
+                          (intern-soft
+                           (format "%s-chat-model" (symbol-name provider-type))))))
+      (when (and accessor (fboundp accessor))
+        (funcall accessor provider)))))
+
 (defclass ai-org-chat--model (transient-infix)
   ((key         :initform "-m")
    (argument    :initform "--model=")
@@ -1751,7 +1761,8 @@ MODEL is a string key from `ai-org-chat-models'."
    (lambda ()
      (format "Model [%s]"
              (if ai-org-chat-provider
-                 (slot-value ai-org-chat-provider 'chat-model)
+                 (or (ai-org-chat--provider-chat-model ai-org-chat-provider)
+                     (llm-name ai-org-chat-provider))
                "none")))
    ("M" "Select model" ai-org-chat-select-model)]
   [["Context"

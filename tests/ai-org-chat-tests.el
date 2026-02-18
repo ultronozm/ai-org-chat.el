@@ -183,6 +183,11 @@
     ;; Test non-existent tool
     (should (eq (ai-org-chat--lookup-tool "nonexistent") nil))))
 
+(defun ai-org-chat--collect-tools ()
+  "Collect tools from TOOLS properties of current and ancestor org nodes."
+  (delq nil (mapcar #'ai-org-chat--lookup-tool
+                    (ai-org-chat--property-values "TOOLS"))))
+
 (ert-deftest test-ai-org-chat--collect-tools ()
   "Test collection of tools from org properties."
   (let* ((ai-org-chat-tools nil)
